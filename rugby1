@@ -1,0 +1,3579 @@
+Imports PerceptiveMCAPI
+Imports PerceptiveMCAPI.Types
+Imports PerceptiveMCAPI.Methods
+Imports VB = Microsoft.VisualBasic
+Imports Microsoft.Office.Interop.Excel
+Imports System.Xml 'http://www.codeproject.com/Articles/4826/XML-File-Parsing-in-VB-NET
+
+
+Public Class Form1
+
+    Public Database_Directory As String
+    Public Database_Temp_Directory As String
+    Public Database_Template_Directory As String
+    Public Database_Checkpoint_Directory As String
+
+    Public SendEmail As Boolean
+
+    Public Const sRotaURL As String = "http://www.grfc.co.uk/api/Rota?type=xml"
+
+    Public Sub New()
+
+        ' This call is required by the designer.
+        InitializeComponent()
+
+        ' Add any initialization after the InitializeComponent() call.
+
+    End Sub
+
+
+    'Extract all email address from the database and categorise into groups
+    'Members - All members paid and unpaid - does not include senior newsletter
+    'Age Groups
+    'Social Members
+    'Seniornewsletter
+
+
+    'Format 
+    'Email Address
+    'First Name
+    'Last Name
+    'Group
+    Sub Main()
+
+
+    End Sub
+
+    Private Sub Form1_Load(sender As Object, e As EventArgs) Handles Me.Load
+
+    End Sub
+
+
+    Sub MAILCHIMP_Write_File(ByVal Passed_Email_Address1 As String, ByVal Passed_Email_Address2 As String, ByVal Passed_Forename As String, ByVal Passed_Lastname As String, ByVal Passed_Group As String)
+
+        Passed_Email_Address1 = Passed_Email_Address1.Trim.ToLower
+        Passed_Email_Address2 = Passed_Email_Address2.Trim.ToLower
+
+        'Sometimes there can be more than 1 email address in the field, mailchimp doesnt like this - each
+        'email address has to have its own line.
+        Dim Array_Email_Address(10) As String
+        Dim Array_Email_Count As Integer = 0
+
+        'Combine both email addresses
+        Passed_Email_Address1 = Passed_Email_Address1 & ";" & Passed_Email_Address2
+
+        If InStr(Passed_Email_Address1, ";") > 0 Then
+            Array_Email_Address = Passed_Email_Address1.Split(";")
+        Else
+            Array_Email_Address(0) = Passed_Email_Address1
+        End If
+
+        Dim OutputFileNo As Integer = FreeFile()
+        FileOpen(OutputFileNo, "D:\RugbyClub\Temp\MailChimp_Group_" & Passed_Group & ".txt", OpenMode.Append, OpenAccess.Write)
+
+        For Array_Email_Count = 0 To (Array_Email_Address.Length - 1)
+            Array_Email_Address(Array_Email_Count) = Trim(Array_Email_Address(Array_Email_Count))
+            If Array_Email_Address(Array_Email_Count) <> "" Then
+                PrintLine(OutputFileNo, Array_Email_Address(Array_Email_Count) & " , " & Passed_Forename & " , " & Passed_Lastname)
+            End If
+        Next
+        FileClose(OutputFileNo)
+
+    End Sub
+
+
+    Sub Create_MAILCHIMP_Lists()
+
+        Me.Label_Progress.Text = "Preparing MAILCHIMP extract"
+
+        'Delete previous files
+        Dim FileToDelete As String = ""
+
+        FileToDelete = Dir("D:\RugbyClub\Temp\MailChimp_Group_*.csv")
+        Do While FileToDelete <> ""
+            FileSystem.Kill("D:\RugbyClub\Temp\" & FileToDelete)
+            FileToDelete = Dir("D:\RugbyClub\Temp\MailChimp_Group_*.csv")
+        Loop
+
+        Dim Club_Conn As ADODB.Connection = New ADODB.Connection
+        Dim Club_RS As ADODB.Recordset = New ADODB.Recordset
+
+        Dim SQL As String = "Select * from ContactsQuery_All where membership_type <=10 "
+
+        Dim OutputFileNo As Integer = 0
+
+        Dim Data_Parents_Forename As String = ""
+        Dim Data_Group As String = ""
+        Dim Data_Email_Addess1 As String = ""
+        Dim Data_Email_Addess2 As String = ""
+
+        Dim Data_Member_Type As String = ""
+
+        Dim Data_Email_SeniorNewsLetter1 As Boolean = False
+        Dim Data_Email_SeniorNewsLetter2 As Boolean = False
+        Dim Data_AlsoPlayingSeniorRugby As Boolean = False
+
+        Dim Email_Groups As String = ""
+
+        Club_Conn.ConnectionString = "provider=microsoft.jet.oledb.4.0;data source=D:\RugbyClub\RugbyClub.mdb"
+        Club_Conn.Open()
+
+        Club_RS.ActiveConnection = Club_Conn
+        Club_RS.let_Source(SQL)
+        Club_RS.Open()
+
+        ' OutputFileNo = FreeFile()
+        'FileOpen(OutputFileNo, "D:\MailChimpEmailsAddresses.csv", OpenMode.Output, OpenAccess.Write)
+
+        Do While Not Club_RS.EOF
+            Email_Groups = ""
+            Data_Parents_Forename = Club_RS.Fields("Parents_Forename").Value.ToString.Trim
+            Data_Email_Addess1 = Club_RS.Fields("Email").Value.ToString.Trim
+            Data_Email_Addess2 = Club_RS.Fields("2nd E-mail").Value.ToString.Trim
+            Data_Email_SeniorNewsLetter1 = Club_RS.Fields("Email1SeniorNewsletter").Value
+            Data_Email_SeniorNewsLetter2 = Club_RS.Fields("Email2SeniorNewsletter").Value
+            Data_AlsoPlayingSeniorRugby = Club_RS.Fields("Also_Playing_Senior_Rugby").Value
+            Data_Group = Club_RS.Fields("Age_Group").Value.ToString.Trim.ToUpper
+            Data_Member_Type = Club_RS.Fields("Member_Type").Value.ToString.Trim.ToUpper
+
+            Call MAILCHIMP_Write_File(Data_Email_Addess1, Data_Email_Addess2, Data_Parents_Forename, "", Data_Group)
+
+            Select Case Data_Member_Type
+                Case "FULL MEMBER", "HONORARY MEMBER", "TEMP MEMBER"
+                    Call MAILCHIMP_Write_File(Data_Email_Addess1, Data_Email_Addess2, Data_Parents_Forename, "", "MEMBER")
+                    Call MAILCHIMP_Write_File(Data_Email_Addess1, Data_Email_Addess2, Data_Parents_Forename, "", "TICKET")
+
+                Case "SOCIAL MEMBER", "LIFETIME SOCIAL MEMBER" : Email_Groups = "MEMBER, SOCIAL, TICKETS, SENIORSUPPORTER"
+                    Call MAILCHIMP_Write_File(Data_Email_Addess1, Data_Email_Addess2, Data_Parents_Forename, "", "MEMBER")
+                    Call MAILCHIMP_Write_File(Data_Email_Addess1, Data_Email_Addess2, Data_Parents_Forename, "", "TICKET")
+                    Call MAILCHIMP_Write_File(Data_Email_Addess1, Data_Email_Addess2, Data_Parents_Forename, "", "SOCIAL")
+                    Call MAILCHIMP_Write_File(Data_Email_Addess1, Data_Email_Addess2, Data_Parents_Forename, "", "SENIORSUPPORTER")
+
+                Case "NEWSLETTER" : Email_Groups = "SENIORSUPPORTER"
+                    Call MAILCHIMP_Write_File(Data_Email_Addess1, Data_Email_Addess2, Data_Parents_Forename, "", "SENIORSUPPORTER")
+            End Select
+
+            'Check the flag against each email address to see if the senior newsletter flag has been ticked. If it is ticked and the person is not already a member of the seniorsupporters group then add them.
+            If Data_Email_Addess1 <> "" Then
+                If Data_Email_SeniorNewsLetter1 = True Then
+                    Call MAILCHIMP_Write_File(Data_Email_Addess1, "", Data_Parents_Forename, "", "SENIORSUPPORTER")
+                End If
+            End If
+
+            If Data_Email_Addess2 <> "" Then
+                If Data_Email_SeniorNewsLetter2 = True Then
+                    Call MAILCHIMP_Write_File(Data_Email_Addess2, "", Data_Parents_Forename, "", "SENIORSUPPORTER")
+                End If
+            End If
+
+            If Data_AlsoPlayingSeniorRugby = True Then
+                Call MAILCHIMP_Write_File(Data_Email_Addess1, Data_Email_Addess2, Data_Parents_Forename, "", "SENIOR")
+            End If
+
+            Club_RS.MoveNext()
+        Loop
+
+        Me.Label_Progress.Text = "MAILCHIMP extract completed"
+
+    End Sub
+
+
+    Function MAILCHIMP_Get_AKIKey() As String
+        MAILCHIMP_Get_AKIKey = "b66f0066d0f82fce222223dc9d1cbc90-us8"
+    End Function
+
+
+    Function MAILCHIMP_NoofLists() As String
+        ' input parameters, using default apikey
+        Dim input As listsInput = New listsInput(MAILCHIMP_Get_AKIKey)
+        ' execution
+        Dim cmd As lists = New lists(input)
+        Dim output As listsOutput = cmd.Execute()
+        MsgBox(output.api_Version.ToString())
+        MsgBox(output.ToString())
+        MsgBox(output.result.ToString)
+        ' format output (Assuming a User control named show_lists)
+        MAILCHIMP_NoofLists = output.ToString
+        Debug.Print(output.ToString)
+    End Function
+
+
+    Function MAILCHIMP_List_Contents() As String
+        ' input parameters, using default apikey
+        Dim input As listsInput = New listsInput(MAILCHIMP_Get_AKIKey)
+        ' execution
+        Dim cmd As lists = New lists(input)
+        Dim output As listsOutput = cmd.Execute()
+        MsgBox(output.api_Version.ToString())
+        MsgBox(output.ToString())
+        MsgBox(output.result.ToString)
+        ' format output (Assuming a User control named show_lists)
+        MAILCHIMP_List_Contents = output.ToString
+        Debug.Print(output.ToString)
+    End Function
+
+
+    Public Sub MAILCHIMP_Batch_Upload(ByVal Passed_FileName As String, ByVal Passed_GroupID As String)
+
+        Me.Label_Progress.Text = "MAILCHIMP Starting batch upload."
+
+        'Load file of emails addresses into mailchimp using batch process.
+        'This is a temp solution.
+
+        Dim EmailDetails_Array(9999, 2) As String ' 0 - Email Address, 1 - Forname, 2 -Surname
+        Dim Cnt As Integer = 0
+        Dim Text As String = ""
+
+        FileOpen(1, Passed_FileName, OpenMode.Input, OpenAccess.Read)
+        Do While Not EOF(1)
+            Text = LineInput(1)
+            Cnt = Cnt + 1
+            ' Split line at commas
+            Dim Values(2) As String
+            Values = Split(Text, ",")
+            'Values(0) now contains first column value,
+            'Values(1) contains second column, etc.
+            EmailDetails_Array(Cnt, 0) = Values(0)
+            EmailDetails_Array(Cnt, 1) = Values(1)
+            'EmailDetails_Array(Cnt, 2) = Values(2)
+        Loop
+        FileClose(1)
+
+        Dim input As listBatchSubscribeInput = New listBatchSubscribeInput()
+        ' any directive overrides
+        input.api_Validate = True
+        input.api_AccessType = EnumValues.AccessType.Serial
+        input.api_OutputType = EnumValues.OutputType.JSON
+        ' method parameters
+        input.parms.apikey = MAILCHIMP_Get_AKIKey()
+        input.parms.id = "019cf1b5dd"
+        input.parms.double_optin = False
+        input.parms.replace_interests = True
+        input.parms.update_existing = True
+        '
+        Dim batch As List(Of Dictionary(Of String, Object)) = New List(Of Dictionary(Of String, Object))
+        For Cnt = 1 To 9999
+            If EmailDetails_Array(Cnt, 0) <> "" Then
+                Dim entry As Dictionary(Of String, Object) = New Dictionary(Of String, Object)
+                entry.Add("EMAIL", Trim(EmailDetails_Array(Cnt, 0)))
+                entry.Add("FNAME", Trim(EmailDetails_Array(Cnt, 1)))
+                entry.Add("LNAME", Trim(EmailDetails_Array(Cnt, 2)))
+                batch.Add(entry)
+            Else
+                Exit For
+            End If
+        Next
+
+        input.parms.batch = batch
+        ' execution
+        Dim cmd As listBatchSubscribe = New listBatchSubscribe(input)
+        Dim output As listBatchSubscribeOutput = cmd.Execute()
+        ' output, format with user control
+        If output.api_ErrorMessages.Count > 0 Then
+            ' raw data & errors
+            Debug.Print(output.api_Request, output.api_Response, output.api_ErrorMessages, output.api_ValidatorMessages)
+            Me.Label_Progress.Text = "MAILCHIMP Completed batch uploaded with errors."
+            MsgBox(Me.Label_Progress.Text)
+        Else
+            Debug.Print(output.ToString)
+            Me.Label_Progress.Text = "MAILCHIMP Completed batch upload. Additional Info : " & output.ToString
+            MsgBox(Me.Label_Progress.Text)
+        End If
+
+    End Sub
+
+
+    Function MAILCHIMP_Readlist() As String
+        MAILCHIMP_Readlist = ""
+
+        Dim apikey As String = MAILCHIMP_Get_AKIKey()
+        'Dim members As listMembersInput = New listMembersInput.
+        'Dim output As listMemberInfoOutput = membe
+
+    End Function
+
+
+    Private Sub Button_Renewals_Click(sender As Object, e As EventArgs) Handles Button_Renewals.Click
+        Form_Renewals.Show()
+    End Sub
+
+
+
+    Private Sub Button_MailChimp_Click(sender As Object, e As EventArgs) Handles Button_MailChimp.Click
+        Call Create_MAILCHIMP_Lists()
+        Call MAILCHIMP_Batch_Upload("D:\RugbyClub\Temp\\MailChimp_Group_MEMBER.txt", "")
+    End Sub
+
+
+    Private Sub Button_SendRegistersAll_Click(sender As Object, e As EventArgs) Handles Button_SendRegistersAll.Click
+
+        'Based on the button pressed and if the check box is checked pass the options to the mail routine.
+        If Me.CheckBox_CreateRegistersOnly.Checked = True Then
+            Call Registers_Prepare(False, "A")
+        Else
+            Call Registers_Prepare(True, "A")
+        End If
+    End Sub
+
+
+    Private Sub Button_SendRegistersJuniors_Click(sender As Object, e As EventArgs) Handles Button_SendRegistersJuniors.Click
+
+        'Based on the button pressed and if the check box is checked pass the options to the mail routine.
+        If Me.CheckBox_CreateRegistersOnly.Checked = True Then
+            Call Registers_Prepare(False, "A")
+        Else
+            Call Registers_Prepare(True, "J")
+        End If
+
+    End Sub
+
+
+    Private Sub Button_SendRegistersSeniors_Click(sender As Object, e As EventArgs) Handles Button_SendRegistersSeniors.Click
+
+        'Based on the button pressed and if the check box is checked pass the options to the mail routine.
+        If Me.CheckBox_CreateRegistersOnly.Checked = True Then
+            Call Registers_Prepare(False, "S")
+        Else
+            Call Registers_Prepare(True, "S")
+        End If
+
+    End Sub
+
+
+    Public Sub Membership_Conf_Email()
+
+        Me.Label_Progress.Text = "Preparing Membership payment confirmation emails."
+
+        Dim Mess_body As String = ""
+        Dim Email_Subject As String = ""
+        Dim Display_Membership_Type As String = ""
+
+        Dim Data_Parents_Names As String = ""
+        Dim Data_First_Name As String = ""
+        Dim Data_Middle_Name As String = ""
+        Dim Data_Surname As String = ""
+        Dim Data_Greeting As String = ""
+
+        Dim Data_Birth_Date As String = ""
+        Dim Data_Sex As String = ""
+        Dim Data_School_Name As String = ""
+
+        Dim Data_Home_Phone As String = ""
+        Dim Data_Emergency_Contact_Phone As String = ""
+        Dim Data_Email As String = ""
+        Dim Data_2nd_EMail As String = ""
+        Dim Data_Medical_Condition As String = ""
+        Dim Data_RFU_Number As String = ""
+        Dim Data_Membership_Number As String = ""
+        Dim Data_Mobile As String = ""
+
+        Dim Data_Parents_Forename As String = ""
+        Dim Data_Parents_Name As String = ""
+        Dim Data_Address1 As String = ""
+        Dim Data_Address2 As String = ""
+        Dim Data_Address_PostTown As String = ""
+        Dim Data_Address_PostCode As String = ""
+
+        Dim Data_Occupation As String = ""
+
+        Dim Data_Volunteer_Catering As Boolean
+        Dim Data_Volunteer_Admin As Boolean
+        Dim Data_Volunteer_Building As Boolean
+        Dim Data_Volunteer_Coaching As Boolean
+        Dim Data_Volunteer_Festival As Boolean
+        Dim Data_Volunteer_Other As String = ""
+
+        Dim Players_Cnt As Integer = 0
+        Dim Players_Cnt2 As Integer = 0
+        Dim Email_Delay As Integer = 1
+
+        Dim Social_Member As Boolean = False
+        Dim Adult_Player As Boolean = False
+
+        '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+        ' Read all entries from dataset based on Query
+        '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+        Dim Club_Conn As ADODB.Connection = New ADODB.Connection
+        Dim Club_RS As ADODB.Recordset = New ADODB.Recordset
+        Dim SQL As String = "SELECT * from Q_Contacts_All_Paid_Members"""
+        Dim hold_alrgy As String = ""
+        Dim Delayed_Delivery_Time As Date
+        Delayed_Delivery_Time = DateAdd("n", 5, Now()) 'Add standard 5 min delay
+
+        Club_Conn.ConnectionString = "provider=microsoft.jet.oledb.4.0;data source=D:\RugbyClub\RugbyClubFrontEnd.mdb"
+        Club_Conn.Open()
+
+        Club_RS.ActiveConnection = Club_Conn
+        Club_RS.CursorType = ADODB.CursorTypeEnum.adOpenForwardOnly
+        Club_RS.LockType = ADODB.LockTypeEnum.adLockOptimistic
+        Club_RS.let_Source(SQL)
+        Club_RS.Open()
+
+        Do While Not Club_RS.EOF
+
+            'Set Default Values
+            Email_Subject = ""
+            Display_Membership_Type = ""
+            Adult_Player = False
+            Data_Parents_Names = ""
+            Data_First_Name = ""
+            Data_Middle_Name = ""
+            Data_Surname = ""
+            Data_Greeting = ""
+
+            Data_Birth_Date = ""
+            Data_Sex = ""
+            Data_School_Name = ""
+
+            Data_Home_Phone = ""
+            Data_Emergency_Contact_Phone = ""
+            Data_Email = ""
+            Data_2nd_EMail = ""
+            Data_Medical_Condition = ""
+            Data_RFU_Number = ""
+            Data_Membership_Number = ""
+            Data_Mobile = ""
+
+            Data_Parents_Forename = ""
+            Data_Parents_Name = ""
+            Data_Address1 = ""
+            Data_Address2 = ""
+            Data_Address_PostTown = ""
+            Data_Address_PostCode = ""
+
+            Data_Occupation = ""
+
+            Data_Volunteer_Catering = False
+            Data_Volunteer_Admin = False
+            Data_Volunteer_Building = False
+            Data_Volunteer_Coaching = False
+            Data_Volunteer_Festival = False
+            Data_Volunteer_Other = ""
+            Social_Member = False
+
+            Data_Parents_Names = ""
+
+            If Club_RS("Membership_Type").Value = 3 Or Club_RS("Membership_Type").Value = 9 Then
+                Social_Member = True
+            End If
+
+            If Club_RS("Age_GroupID").Value = 200 Then
+                Adult_Player = True
+            Else
+                Adult_Player = False
+            End If
+
+            Data_First_Name = Club_RS("First_Name").Value.ToString.Trim
+            Data_Middle_Name = Club_RS("Middle_Name").Value.ToString.Trim
+            Data_Surname = Club_RS("Surname").Value.ToString.Trim
+
+            Data_Birth_Date = Club_RS("Birth_Date").Value.ToString.Trim
+            Data_Sex = Club_RS("Sex").Value.ToString.Trim
+            Data_School_Name = Club_RS("School_ShortName").Value.ToString.Trim
+            Data_Home_Phone = Club_RS("Home_Phone").Value.ToString.Trim
+            Data_Emergency_Contact_Phone = Club_RS("Emergency_Contact_Phone").Value.ToString.Trim
+            Data_Email = Club_RS("Email").Value.ToString.ToLower.Trim
+            Data_Email = Club_RS("2nd E-mail").Value.ToString.ToLower.Trim
+            Data_Medical_Condition = Club_RS("Medical_Condition").Value.ToString.Trim
+            'Data_RFU_Number = Trim(rst("RFU_Number").Value.ToString.Trim
+            Data_Membership_Number = Club_RS("Member_Number").Value.ToString.Trim
+            Data_Parents_Forename = Club_RS("Parents_ForeName").Value.ToString.Trim
+            Data_Parents_Name = Club_RS("Parents_Name").Value.ToString.Trim
+            Data_Address1 = Club_RS("Contacts.Address#1").Value.ToString.Trim
+            Data_Address2 = Club_RS("Contacts.Address#2").Value.ToString.Trim
+            Data_Address_PostTown = Club_RS("Contacts.Town").Value.ToString.Trim
+            Data_Address_PostCode = Club_RS("Contacts.Post_Code").Value.ToString.Trim
+            If Data_Address_PostCode = "" Then
+                Data_Address_PostCode = "*** Post Code - Missing - plese let us know your Post Code ***"
+            End If
+
+            Me.Label_Progress.Text = "Preparing email for : " & Data_First_Name & " " & Data_Surname & " Membership Number : " & Data_Membership_Number
+
+            'Data_Home_Phone = Trim(rst("Home_Phone").Value)
+            'Data_Mobile = Trim(rst("Emergency_Contact_Phone").Value)
+            'Data_Occupation = Trim(rst("Parents_Occupation").Value)
+
+            Data_Occupation = Club_RS("Parents_Occupation").Value.ToString.Trim
+            Data_Home_Phone = Club_RS("Home_Phone").Value.ToString.Trim
+
+            If Social_Member = False Then
+                If Data_Emergency_Contact_Phone = "" Then
+                    If Adult_Player = True Then
+                        Data_Mobile = "*** No Emergency Contact Number - Please provide contact number and name ***"
+                    Else
+                        Data_Mobile = "*** No Emergency Contact Number - Please provide details ***"
+                    End If
+                Else
+                    Data_Mobile = Data_Emergency_Contact_Phone
+                    If Adult_Player = True Then
+                        Data_Mobile = Data_Mobile & vbCrLf & "*** Please ensure that this includes emergency contact name and number. ***" & vbCrLf
+                    End If
+                End If
+            End If
+
+            Data_Volunteer_Catering = Club_RS("Volunteer_Catering").Value
+            Data_Volunteer_Admin = Club_RS("Volunteer_Admin").Value
+            Data_Volunteer_Building = Club_RS("Volunteer_BuildingMaint").Value
+            Data_Volunteer_Coaching = Club_RS("Volunteer_Coaching").Value
+            Data_Volunteer_Festival = Club_RS("Volunteer_Festival").Value
+            Data_Volunteer_Other = Club_RS("Volunteer_Other").Value.ToString.Trim
+            Data_Volunteer_Other = " - Not Indicated  "
+            If Data_Volunteer_Other = "No" Or Data_Volunteer_Other = "" Then
+                Data_Volunteer_Other = " - Not Indicated  "
+            End If
+
+            If Data_Parents_Forename = "" Then
+                Data_Greeting = Data_Parents_Name
+            Else
+                Data_Greeting = Data_Parents_Forename
+            End If
+
+            If Data_Medical_Condition <> "None" Then
+                Data_Medical_Condition = "***** " & Data_Medical_Condition & " *****"
+            End If
+
+            If Data_Email <> "" Then
+                Email_Subject = "Guildfordians RFC - Membership Payment Confirmation - " & Data_First_Name & " " & Data_Surname & " Membership Number : " & Data_Membership_Number & Display_Membership_Type
+
+                If Club_RS("Payment_Method").Value = "Pay as You Play" And Adult_Player = True Then
+                    'Change the subject of the email
+                    Email_Subject = "Guildfordians RFC - Membership Pay as You Play - " & Data_First_Name & " " & Data_Surname & " Membership Number : " & Data_Membership_Number
+                Else
+                    If Social_Member = True Then
+                        If Club_RS("Membership_Type").Value = 3 Then
+                            Display_Membership_Type = " Social Member"
+                        End If
+                        If Club_RS("Membership_Type").Value = 9 Then
+                            Display_Membership_Type = " Life Time Social Member"
+                        End If
+                    End If
+                End If
+
+                Mess_body = "Dear " & Data_Greeting & "," & vbCrLf
+
+                If (Adult_Player = True Or Social_Member = True) Then
+                    Mess_body = Mess_body & _
+                    "Thank you for joining Guildfordians RFC this season, please check all of these details taken from the membership form very carefully and let us know if any details are not correct." & vbCrLf & vbCrLf
+
+                    If Social_Member = True Then
+                        Mess_body = Mess_body & "Membership Type : " & Display_Membership_Type & vbCrLf & vbCrLf
+                    End If
+                Else
+                    Mess_body = Mess_body & "Thank you for joining Guildfordians RFC with " & Data_First_Name & " this season, please check all of these details taken from the membership form very carefully and let us know if any details are not correct." & vbCrLf & vbCrLf
+                End If
+
+                If Adult_Player = True Then
+                    If Club_RS("Payment_Method").Value = "Pay as You Play" Then
+                        Mess_body = Mess_body & "Membership Type : Pay as You Play ( you can change to Single Payment - No Match Fees if you want to )" & vbCrLf & vbCrLf
+                    Else
+                        Mess_body = Mess_body & "Membership Type : Single Payment - No Match Fees " & vbCrLf & vbCrLf
+                    End If
+                End If
+
+                Mess_body = Mess_body & _
+                "Members Details : " & vbCrLf & "Name : " & Data_First_Name & " " & Data_Middle_Name & " " & Data_Surname & vbCrLf & _
+                "Date of Birth : " & Data_Birth_Date & " ( " & Data_Sex & " ) " & vbCrLf
+
+                If Adult_Player = True Or Social_Member = True Then
+                    'School info not needed
+                Else
+                    Mess_body = Mess_body & "School : " & Data_School_Name & vbCrLf
+                End If
+                Mess_body = Mess_body & "Medical Conditions : " & Data_Medical_Condition & vbCrLf & vbCrLf
+
+                ' "Club Membership Number : " & Data_Membership_Number & vbCrLf & _
+                ' "RFU Membership Number : " & Data_RFU_Number & vbCrLf & vbCrLf
+
+                If Adult_Player = True Or Social_Member = True Then
+                    'Nothing needed
+                Else
+                    Mess_body = Mess_body & _
+                    "Parents Details : " & vbCrLf & "Parents Name(s) " & Data_Parents_Name
+                    If Len(Data_Parents_Forename) <> 0 Then
+                        Mess_body = Mess_body & " ( " & Data_Parents_Forename & " ) "
+                    End If
+                End If
+
+                Mess_body = Mess_body & vbCrLf & "Address : " & Data_Address1 & " " & Data_Address2 & " " & Data_Address_PostTown & " " & Data_Address_PostCode & vbCrLf & _
+                "Home Phone Number : " & Data_Home_Phone & vbCrLf & vbCrLf
+
+                If Adult_Player = True Or Social_Member = True Then
+                    Mess_body = Mess_body & "Emergency Contact Details : " & Data_Mobile & vbCrLf & _
+                    "Occupation : " & Data_Occupation & vbCrLf
+                Else
+                    Mess_body = Mess_body & "Emergency Phone Number ( if different to above ) : " & Data_Mobile & vbCrLf & _
+                    "Occupation(s) : " & Data_Occupation & vbCrLf
+                End If
+
+                Mess_body = Mess_body & "Email Address(s) : " & Data_Email
+                If Data_2nd_EMail <> "" Then
+                    Mess_body = Mess_body & " ; " & Data_2nd_EMail
+                End If
+                Mess_body = Mess_body & vbCrLf & "*** Are these the best email addresses for you ? would you like additional email addresses added - please let us know ***"
+
+                'If Adult_Player = True Then
+                'No information to add
+                'Else
+                Mess_body = Mess_body & vbCrLf & vbCrLf & _
+                "Volunteering" & vbCrLf & _
+                "Volunteered : " & " Catering " & IIf(Data_Volunteer_Catering = True, " - Yes ", " - Not Indicated  ") & vbCrLf & _
+                "Volunteered : " & " Admin " & IIf(Data_Volunteer_Admin = True, " - Yes ", " - Not Indicated  ") & vbCrLf & _
+                "Volunteered : " & " Buildings Maintenance " & IIf(Data_Volunteer_Building = True, " - Yes  ", " - Not Indicated ") & vbCrLf & _
+                "Volunteered : " & " Coaching " & IIf(Data_Volunteer_Coaching = True, " - Yes ", " - Not Indicated ") & vbCrLf & _
+                "Volunteered : " & " Festival " & IIf(Data_Volunteer_Festival = True, " - Yes  ", " - Not Indicated  ") & vbCrLf & _
+                "Volunteered : " & " Other " & Data_Volunteer_Other & vbCrLf & vbCrLf & _
+                "If you would like to volunteer to help in any capacity please contact our Volunteer Coordinator Email : volunteers@grfc.co.uk  "
+                'End If
+
+                Mess_body = Mess_body & vbCrLf & "If any of your details changes during the season please let me know as soon as possible so that the membership records can be kept up to date." & vbCrLf & vbCrLf
+
+                If Social_Member = True Then
+                    Mess_body = Mess_body & vbCrLf & "Please see the social members web page : <a href=http://www.grfc.co.uk/Social.aspx>http://www.grfc.co.uk/Social.aspx</a>" & vbCrLf & vbCrLf
+                End If
+
+                Mess_body = Mess_body & "Many thanks" & vbCrLf & _
+                "Tracy Davies" & vbCrLf & _
+                "Membership Secretary" & vbCrLf & "www.grfc.co.uk "
+
+                Players_Cnt = Players_Cnt + 1
+                Players_Cnt2 = Players_Cnt2 + 1
+                If Players_Cnt2 >= 10 Then
+                    Players_Cnt2 = 0
+                    'Add 1 min to the last Delayed Delivery time
+                    Delayed_Delivery_Time = DateAdd("n", Email_Delay, Delayed_Delivery_Time)
+                End If
+
+                If Now() > Delayed_Delivery_Time Then
+                    'Delayed delivery time is in the past, add 5 mins to the current time.
+                    Delayed_Delivery_Time = DateAdd("n", 5, Now())
+                Else
+                    'Ok
+                End If
+
+                If Utility_Send_Email(Data_Email, Data_2nd_EMail, "", "", Email_Subject, Mess_body, "", "", "", "", "", False, Delayed_Delivery_Time) Then
+                    Club_RS("Membership_Paid_Conf_Email_Sent").Value = Now()
+                    Club_RS.Update()
+                End If
+            Else
+                'No email address - set flag to stop trying on every run
+                Club_RS("Membership_Paid_Conf_Email_Sent").Value = Now()
+                Club_RS.Update()
+            End If
+            Club_RS.MoveNext()
+        Loop
+
+NoRecs:
+        Club_RS.Close()
+        Club_Conn.Close()
+
+
+        Me.Label_Progress.Text = "Finished Membership payment confirmation emails."
+
+        MsgBox("Emailing of recently paid members completed.")
+
+    End Sub
+
+
+    Sub Create_Qualifications_List(ByVal SendEmail As Boolean)
+
+        Me.Label_Progress.Text = "Creating Qualification list."
+
+        Dim Report_Header As String = ""
+        Dim Send_Emails As Boolean = True
+        Dim RegFile As Integer = FreeFile()
+        FileOpen(RegFile, "D:\RugbyClub\Temp\Qualifications.html", OpenMode.Output, OpenAccess.Write)
+
+        'Write HTML file for report.
+        PrintLine(RegFile, "<HTML><HEAD><title>Guildfordians RFC Qualifications \ Awards</title></HEAD>")
+        PrintLine(RegFile, "<font size=+2><b>Guildfordians RFC Qualifications \ Awards</b></font><br><br>")
+        PrintLine(RegFile, "<table border=1 width=100% cellspacing=0 cellpadding=1>")
+
+        Report_Header = Report_Header & "<THEAD><tr>"
+        Report_Header = Report_Header & "<th width=10% align=left valign=bottom BGCOLOR=SILVER><font size=-1>Name</font></th>"
+        Report_Header = Report_Header & "<th align=left valign=bottom BGCOLOR=SILVER><font size=-1>Role</font></th>"
+        Report_Header = Report_Header & "<th align=left valign=bottom BGCOLOR=SILVER><font size=-1>CRB<br>Expires</font></th>"
+        Report_Header = Report_Header & "<th align=left valign=bottom BGCOLOR=SILVER><font size=-1>TAG \ Foundation</font></th>"
+        Report_Header = Report_Header & "<th align=left valign=bottom BGCOLOR=SILVER><font size=-1>Rugby<br>Ready</font></th>"
+        Report_Header = Report_Header & "<th align=left valign=bottom BGCOLOR=SILVER><font size=-1>Coaching<br>Children</font></th>"
+        Report_Header = Report_Header & "<th align=left valign=bottom BGCOLOR=SILVER><font size=-1>Level 1</font></th>"
+        Report_Header = Report_Header & "<th align=left valign=bottom BGCOLOR=SILVER><font size=-1>Level 2</font></th>"
+        Report_Header = Report_Header & "<th align=left valign=bottom BGCOLOR=SILVER><font size=-1>Referee</font></th>"
+        Report_Header = Report_Header & "<th align=left valign=bottom BGCOLOR=SILVER><font size=-1>Safeguarding & Protecting Children<br>Completed</font></th>"
+        Report_Header = Report_Header & "<th align=left valign=bottom BGCOLOR=SILVER><font size=-1>First Aid<br>Expires</font></th>"
+        Report_Header = Report_Header & "<th align=left valign=bottom BGCOLOR=SILVER><font size=-1>Other</font></th>"
+        Report_Header = Report_Header & "</tr></THEAD>"
+
+        'PrintLine(RegFile, Report_Header
+
+
+        Dim Club_Conn As ADODB.Connection = New ADODB.Connection
+        Dim Club_RS As ADODB.Recordset = New ADODB.Recordset
+
+        Dim SQL As String = "SELECT * from [Q_Query Qualifications] "
+
+        Club_Conn.ConnectionString = "provider=microsoft.jet.oledb.4.0;data source=D:\RugbyClub\RugbyClubFrontEnd.mdb"
+        Club_Conn.Open()
+
+        Club_RS.ActiveConnection = Club_Conn
+        Club_RS.let_Source(SQL)
+        Club_RS.Open()
+
+        Dim Pos As Integer
+
+        Dim Prev_Age_Group As String = ""
+        Dim Prev_Age_Group_UC As String = ""
+
+        Dim Prev_Age_Group_Id As String = ""
+        Dim Data_Age_Group_Id As String = ""
+        Dim Prev_Name As String = ""
+        Dim Prev_Role As String = ""
+        Dim Prev_Role_UC As String = "" 'Upper case version
+
+
+        Dim Field_CRB As String = ""
+        Dim Field_TAG As String = ""
+        Dim Field_RugbyReady As String = ""
+        Dim Field_CoachingChildren As String = ""
+        Dim Field_L1 As String = ""
+        Dim Field_L2 As String = ""
+        Dim Field_REF As String = ""
+        Dim Field_SAP As String = ""
+        Dim Field_1stAid As String = ""
+        Dim Field_Oth As String = ""
+        Dim FntSt As String = ""
+        Dim FntEnd As String = ""
+
+        Dim Cnt_Tag As Integer = 0
+        Dim Cnt_RugbyReady As Integer = 0
+        Dim Cnt_CoachingChildren As Integer = 0
+        Dim Cnt_L1 As Integer = 0
+        Dim Cnt_L2 As Integer = 0
+        Dim Cnt_L3 As Integer = 0
+        Dim Cnt_1stAid As Integer = 0
+        Dim Cnt_SAP As Integer = 0
+        Dim Cnt_REF As Integer = 0
+        Dim Cnt_REF_Mini As Integer = 0
+        Dim All_Records_Read As Boolean = False
+        Dim AgeGroupRecommendError As String = ""
+        Dim MonthDiff_int As Integer = 0
+        Dim RefCoursePos_int As Integer = 0
+        Dim AgeGroupRecommendMet As String = ""
+
+        Dim Data_Email As String = ""
+        Dim Prev_Email As String = ""
+
+        Dim Data_Name As String = ""
+        Dim Data_Age_Group As String = ""
+        Dim Data_Age_Group_UC As String = ""
+        Dim Data_QualificationAward As String = ""
+        Dim Data_DateObtained As String = ""
+        Dim Data_DateExpires As String = ""
+        Dim Data_Role As String = ""
+        Dim Data_QualificationAwardType As String = ""
+
+
+        Dim Excel_Row As Integer = 26
+
+        Dim XL As Microsoft.Office.Interop.Excel.Application = CreateObject("Excel.Application")
+        'Open Template
+        Dim ExcelSheet As Microsoft.Office.Interop.Excel.Workbook = XL.Workbooks.Open("D:\RugbyClub\Template\Blank_ClubCoachDevelopment_V3.1b.xls")
+
+        'Delete the previous file if it exists
+        If Dir("D:\RugbyClub\Temp\Guildfordians RFC_Qualifications.XLS") <> "" Then
+            Kill("D:\RugbyClub\Temp\Guildfordians RFC_Qualifications.XLS")
+        End If
+
+        Dim Course_Booked_Text As String
+        Course_Booked_Text = "<i><font color = orange>Course Booked</font></i>"
+
+        'Process all of the records.
+        Do While Not Club_RS.EOF
+
+            Data_Name = Club_RS("Name").Value.ToString.Trim
+            Data_Age_Group = Club_RS("Age_Group").Value.ToString.Trim
+            Data_Age_Group_UC = Data_Age_Group.ToUpper 'Upper Case version
+            Data_QualificationAward = Club_RS("QualificationAward").Value.ToString.Trim
+            Data_DateObtained = Club_RS("DateObtained").Value.ToString.Trim
+            Data_DateObtained = VB.Left(Data_DateObtained, 10) 'Remove time element
+            Data_DateExpires = Club_RS("DateExpires").Value.ToString.Trim
+            Data_DateExpires = VB.Left(Data_DateExpires, 10) 'Remove time element
+            Data_Role = Club_RS("Role").Value.ToString.Trim
+            Data_QualificationAwardType = Club_RS("QualificationAwardType").Value.ToString.Trim
+            Data_Age_Group_Id = Club_RS("Age_GroupId").Value.ToString.Trim
+            Data_Email = Club_RS("Email").Value.ToString.Trim.ToLower
+
+            Me.Label_Progress.Text = "Creating Qualification list : " & Data_Age_Group
+
+            If Data_DateObtained = "" Then
+                Data_DateObtained = "Date Not Recorded"
+            Else
+                If Data_DateObtained = "01/01/1901" Then
+                    Data_DateObtained = Course_Booked_Text
+                End If
+            End If
+
+            If Data_DateExpires = "" Then
+                Data_DateExpires = "Date Not Recorded"
+            End If
+
+NewPerson:
+            If (Prev_Name <> Data_Name) And Prev_Name <> "" Then
+
+                'New person
+                If Prev_Name <> "" Then
+                    If Prev_Role_UC = "HEAD COACH" Or Prev_Role_UC = "ASSISTANT COACH" Or Prev_Role_UC = "REFEREE" Or Prev_Role_UC = "PARENT HELPER" Or Prev_Role_UC = "JUNIOR HELPER" Or Prev_Role_UC = "HELPER" Or Prev_Role_UC = "SENIOR CAPTAIN" Or Prev_Role_UC = "SENIOR MATCH DAY TEAM" Then
+
+                        Pos = 0
+                        If Field_CRB = "" Then
+                            If Data_Age_Group_UC <> "SENIOR" And Prev_Age_Group_UC <> "SENIOR" And Prev_Role_UC <> "JUNIOR HELPER" And Prev_Role_UC <> "PARENT HELPER" Or Prev_Role_UC = "SENIOR CAPTAIN" Or Prev_Role_UC = "SENIOR MATCH DAY TEAM" Then
+                                Field_CRB = "<font color=red>No CRB recorded !!!</font>"
+
+                                Call Prepare_DBSChase_Email(Prev_Name, Prev_Email, "", "No CRB Recorded.", Prev_Age_Group, Prev_Age_Group_Id)
+                            Else
+                                Field_CRB = "&nbsp"
+                            End If
+
+                        Else
+                            'CRB details recorded
+                            Pos = InStr(Field_CRB, "CRB Applied For")
+                            If Pos > 0 Then
+                                'CRB in hand
+
+                                Pos = InStr(Field_CRB, "Expires within 6 months")
+                                If Pos > 0 Then
+                                    'If CRB  has been applied for then remove warning
+                                    Field_CRB = Replace(Field_CRB, "Expires within 6 months", "")
+                                End If
+                            Else
+                                Pos = InStr(Field_CRB, "Expired !!!")
+                                If Pos > 0 Then
+                                    'CRB has expired & is not in the process of being renewed
+                                    Call Prepare_DBSChase_Email(Prev_Name, Prev_Email, "", "CRB has Expired", Prev_Age_Group, Prev_Age_Group_Id)
+                                Else
+                                    Pos = InStr(Field_CRB, "Expires within 6 months")
+                                    If Pos > 0 Then
+                                        'CRB has expired & is not in the process of being renewed
+                                        Call Prepare_DBSChase_Email(Prev_Name, Prev_Email, "", "Expires on : " & VB.Left(Field_CRB, 10) & " - New Application needed.", Prev_Age_Group, Prev_Age_Group_Id)
+                                    End If
+                                End If
+                            End If
+                        End If
+                    Else
+                        Field_CRB = "&nbsp"
+                    End If
+
+                    If Field_TAG = "" Then
+                        Field_TAG = "&nbsp"
+                    End If
+
+                    If Field_RugbyReady = "" Then
+                        Field_RugbyReady = "&nbsp"
+                    End If
+
+                    If Field_CoachingChildren = "" Then
+                        Field_CoachingChildren = "&nbsp"
+                    End If
+
+                    If Field_L1 = "" Then
+                        Field_L1 = "&nbsp"
+                    End If
+
+                    If Field_L2 = "" Then
+                        Field_L2 = "&nbsp"
+                    End If
+
+                    If Field_REF = "" Then
+                        Field_REF = "&nbsp"
+                    End If
+
+                    If Field_SAP = "" Then
+                        Field_SAP = "&nbsp"
+                    End If
+
+                    If Field_1stAid = "" Then
+                        Field_1stAid = "&nbsp"
+                    End If
+
+                    If Field_Oth = "" Then
+                        Field_Oth = "&nbsp"
+                    End If
+
+                    FntSt = "<font size=-1>"
+                    FntEnd = "</font>"
+                    PrintLine(RegFile, "<tr>")
+                    PrintLine(RegFile, "<td>" & Prev_Name & "</td>" & "<td><font size=-1>" & Prev_Role & "</td>" & "<td><font size=-1>" & Field_CRB & "</td>" & "<td><font size=-1>" & Field_TAG & "</td>" & "<td><font size=-1>" & Field_RugbyReady & "</td>" & "<td><font size=-1>" & Field_CoachingChildren & "</td>" & "<td><font size=-1>" & Field_L1 & "</td>" & "<td><font size=-1>" & Field_L2 & "</td>" & "<td><font size=-1>" & Field_REF & "</td>" & "<td><font size=-1>" & Field_SAP & "</td>" & "<td><font size=-1>" & Field_1stAid & "</td>" & "<td><font size=-1>" & Field_Oth & "</td>")
+                    PrintLine(RegFile, "</tr>")
+
+                    'Amended 02/02/11 to exclude parent & junior helpers
+                    If Prev_Role_UC = "HEAD COACH" Or Prev_Role_UC = "ASSISTANT COACH" Or Prev_Role_UC = "REFEREE" Or Prev_Role_UC = "SENIOR CAPTAIN" Then
+
+                        ExcelSheet.Sheets(1).Cells((Excel_Row), 1).Value = VB.Left(Prev_Name, InStr(Prev_Name, " "))
+                        ExcelSheet.Sheets(1).Cells((Excel_Row), 2).Value = Trim(Mid(Prev_Name, InStr(Prev_Name, " ")))
+
+                        If Prev_Age_Group_Id = "118" Then
+                            ExcelSheet.Sheets(1).Cells((Excel_Row), 3).Value = "18 Girls"
+                        Else
+                            If Prev_Age_Group_Id = "115" Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 3).Value = "15 Girls"
+                            Else
+                                If Prev_Age_Group_Id = "200" Then
+                                    ExcelSheet.Sheets(1).Cells((Excel_Row), 3).Value = "1 st Senior"
+                                Else
+                                    If Prev_Age_Group_Id = "7" Or Prev_Age_Group_Id = "6" Or Prev_Age_Group_Id = "5" Or Prev_Age_Group_Id = "4" Or Prev_Age_Group_Id = "3" Then
+                                        ExcelSheet.Sheets(1).Cells((Excel_Row), 3).Value = "7"
+                                    Else
+                                        If Val(Prev_Age_Group_Id) <= 20 Then
+                                            ExcelSheet.Sheets(1).Cells((Excel_Row), 3).Value = Prev_Age_Group_Id
+                                        Else
+                                            ExcelSheet.Sheets(1).Cells((Excel_Row), 3).Value = "Other"
+                                        End If
+                                    End If
+                                End If
+                            End If
+                        End If
+
+                        'CRB
+                        If Field_CRB <> "&nbsp" Then
+                            If InStr(Field_CRB, "CRB Applied For") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 6).Value = "Y"
+                            Else
+                                If InStr(Field_CRB, "Expired !!!") > 0 Or InStr(Field_CRB, "No CRB recorded !!!") > 0 Then
+                                    'ExcelSheet.Sheets(1).Cells((Excel_Row), 6).Value = "N"
+                                Else
+                                    ExcelSheet.Sheets(1).Cells((Excel_Row), 6).Value = "Y"
+                                End If
+                            End If
+                        Else
+                            'ExcelSheet.Sheets(1).Cells((Excel_Row), 6).Value = "N"
+                        End If
+
+                        'Safeguarding
+                        If Field_SAP <> "&nbsp" Then
+                            If InStr(Field_SAP, "Expired !!!") > 0 Then
+                                'ExcelSheet.Sheets(1).Cells((Excel_Row), 7).Value = "N"
+                            Else
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 7).Value = "Y"
+                            End If
+                        Else
+                            'ExcelSheet.Sheets(1).Cells((Excel_Row), 7).Value = "N"
+                        End If
+
+                        'First Aid
+                        If Field_1stAid <> "&nbsp" Then
+                            If InStr(Field_1stAid, "Expired !!!") > 0 Then
+                                'ExcelSheet.Sheets(1).Cells((Excel_Row), 8).Value = "N"
+                            Else
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 8).Value = "Y"
+                            End If
+                        Else
+                            'ExcelSheet.Sheets(1).Cells((Excel_Row), 8).Value = "N"
+                        End If
+
+                        If Field_RugbyReady <> "&nbsp" Then
+                            ExcelSheet.Sheets(1).Cells((Excel_Row), 9).Value = "Y"
+                        Else
+                            'ExcelSheet.Sheets(1).Cells((Excel_Row), 9).Value = "N"
+                        End If         'RR 10
+
+                        If Field_TAG <> "&nbsp" Then
+                            ExcelSheet.Sheets(1).Cells((Excel_Row), 10).Value = "Y"
+                        Else
+                            'ExcelSheet.Sheets(1).Cells((Excel_Row), 10).Value = "N"
+                        End If
+
+                        If Field_CoachingChildren <> "&nbsp" Then
+                            ExcelSheet.Sheets(1).Cells((Excel_Row), 11).Value = "Y"
+                        Else
+                            'ExcelSheet.Sheets(1).Cells((Excel_Row), 10).Value = "N"
+                        End If
+
+                        'TAG 11
+                        If Field_L1 <> "&nbsp" Then
+                            ExcelSheet.Sheets(1).Cells((Excel_Row), 12).Value = "Y"
+                        Else
+                            'ExcelSheet.Sheets(1).Cells((Excel_Row), 12).Value = "N"
+                        End If
+
+                        If Field_L2 <> "&nbsp" Then
+                            ExcelSheet.Sheets(1).Cells((Excel_Row), 13).Value = "Y"
+                        Else
+                            'ExcelSheet.Sheets(1).Cells((Excel_Row), 13).Value = "N"
+                        End If
+
+                        If Field_Oth <> "&nbsp" Then
+                            '15 Back Play
+                            If InStr(Field_Oth, "CPD Back Play - Mini") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 15).Value = "Mini"
+                            End If
+                            '15 Back Play
+                            If InStr(Field_Oth, "CPD Back Play - Youth") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 15).Value = "Youth"
+                            End If
+                            '15 Back Play
+                            If InStr(Field_Oth, "CPD Back Play - Adult") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 15).Value = "Adult"
+                            End If
+
+                            '16 Continuity in Attack
+                            If InStr(Field_Oth, "CPD Continuity in Attack - Mini") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 16).Value = "Mini"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Continuity in Attack - Youth") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 16).Value = "Youth"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Continuity in Attack - Adult") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 16).Value = "Adult"
+                            End If
+
+                            '17 Defence
+                            If InStr(Field_Oth, "CPD Defence") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 17).Value = "Adult"
+                            End If
+
+                            '18 Game Planning
+                            If InStr(Field_Oth, "CPD Game Planning") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 18).Value = "Other"
+                            End If
+
+                            '19 Goal Setting
+                            If InStr(Field_Oth, "CPD Goal Setting - Mini") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 19).Value = "Mini"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Goal Setting - Youth") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 19).Value = "Youth"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Goal Setting - Adult") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 19).Value = "Adult"
+                            End If
+
+                            '20 The line-out game
+                            If InStr(Field_Oth, "CPD The line-out game - Mini") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 20).Value = "Mini"
+                            End If
+
+                            If InStr(Field_Oth, "CPD The line-out game - Youth") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 20).Value = "Youth"
+                            End If
+
+                            If InStr(Field_Oth, "CPD The line-out game - Adult") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 20).Value = "Adult"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Performance Analysis") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 21).Value = "Other"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Performance Profiling") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 22).Value = "Other"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Planning & Periodisation") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 23).Value = "Other"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Maul & Ruck - Mini") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 24).Value = "Mini"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Maul & Ruck - Youth") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 24).Value = "Youth"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Maul & Ruck - Adult") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 24).Value = "Adult"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Team Selection - Youth") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 25).Value = "Youth"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Team Selection - Adult") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 25).Value = "Adult"
+                            End If
+
+                            If InStr(Field_Oth, "CPD The Kicking Game - Mini") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 26).Value = "Mini"
+                            End If
+
+                            If InStr(Field_Oth, "CPD The Kicking Game - Youth") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 26).Value = "Youth"
+                            End If
+
+                            If InStr(Field_Oth, "CPD The Kicking Game - Adult") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 26).Value = "Adult"
+                            End If
+
+                            '27 Technical Lineout
+                            If InStr(Field_Oth, "CPD Technical Lineout - Mini") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 27).Value = "Mini"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Technical Lineout - Youth") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 27).Value = "Youth"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Technical Lineout - Adult") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 27).Value = "Adult"
+                            End If
+
+                            '28 Technical Scrum
+                            If InStr(Field_Oth, "CPD Technical Scrum - Mini") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 28).Value = "Mini"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Technical Scrum - Youth") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 28).Value = "Youth"
+                            End If
+
+                            If InStr(Field_Oth, "CPD Technical Scrum - Adult") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 28).Value = "Adult"
+                            End If
+
+                            '29 ELRA
+                            If InStr(Field_Oth, "CPD ELRA - Mini") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 29).Value = "Mini"
+                            End If
+
+                            If InStr(Field_Oth, "CPD ELRA - Youth") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 29).Value = "Youth"
+                            End If
+
+                            If InStr(Field_Oth, "CPD ELRA - Adult") > 0 Then
+                                ExcelSheet.Sheets(1).Cells((Excel_Row), 29).Value = "Adult"
+                            End If
+                        End If
+                        Excel_Row = Excel_Row + 1
+                    End If
+                End If
+                '??????????????
+                Field_CRB = ""
+                Field_TAG = ""
+                Field_RugbyReady = ""
+                Field_L1 = ""
+                Field_L2 = ""
+                Field_REF = ""
+                Field_SAP = ""
+                Field_1stAid = ""
+                Field_Oth = ""
+                Field_CoachingChildren = ""
+
+                If All_Records_Read = True Then
+                    Exit Do
+                End If
+
+            End If
+
+            If Prev_Age_Group <> Data_Age_Group Then
+                'New Age group
+
+                If Data_Age_Group = "U17" Then
+                    Debug.Print(" ")
+                End If
+
+                'Check age Group meets requirements
+
+                AgeGroupRecommendMet = "Y"
+                AgeGroupRecommendError = ""
+
+                Select Case Prev_Age_Group_UC
+
+                    Case "MICROS", "U6", "U7", "TAG"
+                        If (Cnt_Tag + Cnt_L1 + Cnt_L2 + Cnt_RugbyReady) < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 TAG \ Foundation ( or higher ) Coaches.<br>"
+                        End If
+
+                        If Prev_Age_Group = "U7" Then
+                            If (Cnt_REF + Cnt_REF_Mini) < 2 Then
+                                AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 Mini \ ELRA Referees.<br>"
+                            End If
+                        End If
+
+                        If Cnt_1stAid < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 1st Aiders.<br>"
+                        End If
+
+                        If Cnt_SAP = 0 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "No one has a valid Safeguarding & Protecting Children qualification.<br>"
+                        End If
+
+                    Case "U8"
+                        If Cnt_Tag < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 TAG \ Foundation ( or higher ) Coaches.<br>"
+                        End If
+
+                        If (Cnt_REF + Cnt_REF_Mini) < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 Mini \ ELRA Referees.<br>"
+                        End If
+
+                        If (Cnt_RugbyReady + Cnt_L1 + Cnt_L2 + Cnt_L3) < 1 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 1 Rugby Ready ( or higher ) Coach<br>"
+                        End If
+
+                        If Cnt_1stAid < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 1st Aiders.<br>"
+                        End If
+
+                        If Cnt_SAP = 0 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "No one has completed Safeguarding & Protecting Children course.<br>"
+                        End If
+
+                    Case "U9"
+                        If (Cnt_RugbyReady + Cnt_L1 + Cnt_L2 + Cnt_L3) < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 Rugby Ready ( or higher ) Coaches<br>"
+                        End If
+
+                        If Cnt_REF < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 ELRA Referees.<br>"
+                        End If
+
+                        If (Cnt_Tag) < 1 And (Cnt_L1 + Cnt_L2 + Cnt_L3) < 1 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "No TAG \ Foundation trained Coaches.<br>"
+                        End If
+
+                        If Cnt_1stAid < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 1st Aiders.<br>"
+                        End If
+
+                        If Cnt_SAP = 0 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "No one has a valid Safeguarding & Protecting Children qualification.<br>"
+                        End If
+
+                    Case "U10"
+                        If (Cnt_L1 + Cnt_L2 + Cnt_L3) < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 Level 1 ( or higher ) Coaches.<br>"
+                        End If
+
+                        If Cnt_REF < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 ELRA Referees.<br>"
+                        End If
+
+                        If Cnt_1stAid < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 1st Aiders.<br>"
+                        End If
+
+                        If Cnt_SAP = 0 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "No one has a valid Safeguarding & Protecting Children qualification.<br>"
+                        End If
+
+                        'Case "U11" To "U17", "GIRLS U15", "GIRLS U18"
+                    Case "U11" To "U17", "GIRLS U18"
+                        If (Cnt_L1 + Cnt_L2 + Cnt_L3) < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 Level 1 ( or higher ) Coaches.<br>"
+                        End If
+
+                        If Cnt_REF < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 ELRA Referees.<br>"
+                        End If
+
+                        If Cnt_1stAid < 2 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "Less than 2 1st Aiders.<br>"
+                        End If
+
+                        If Cnt_SAP = 0 Then
+                            AgeGroupRecommendError = AgeGroupRecommendError & "No one has a valid Safeguarding & Protecting Children qualification.<br>"
+                        End If
+                End Select
+
+                If AgeGroupRecommendError <> "" And Prev_Age_Group_UC <> "NON PLAYING" Then
+                    PrintLine(RegFile, "<tr>")
+                    PrintLine(RegFile, "<td colspan=12 align=center BGCOLOR=SILVER>" & "<b>" & "Age Group - " & Prev_Age_Group & " has not met requirements</b></td>")
+                    PrintLine(RegFile, "</tr>")
+
+                    PrintLine(RegFile, "<tr>")
+                    PrintLine(RegFile, "<td colspan=12><font color=red>" & AgeGroupRecommendError & "</font></td>")
+                    PrintLine(RegFile, "</tr>")
+                End If
+
+                PrintLine(RegFile, "<tr>")
+                If Data_Age_Group_UC = "NON PLAYING" Then
+                    PrintLine(RegFile, "<td colspan=12 align=center BGCOLOR=SILVER>" & "<b>" & "Age Group - Not Currently Assigned to Age Group \ Floating Resource" & "</b></td>")
+                    PrintLine(RegFile, Report_Header)
+                Else
+                    PrintLine(RegFile, "<td colspan=12 align=center BGCOLOR=SILVER>" & "<b>" & "Age Group - " & Data_Age_Group & "</b></td>")
+                    PrintLine(RegFile, Report_Header)
+                End If
+                PrintLine(RegFile, "</tr>")
+
+                Prev_Age_Group = Data_Age_Group
+                Prev_Age_Group_UC = Prev_Age_Group.ToUpper
+                Cnt_Tag = 0
+                Cnt_L1 = 0
+                Cnt_L2 = 0
+                Cnt_1stAid = 0
+                Cnt_SAP = 0
+                Cnt_REF = 0
+                Cnt_REF_Mini = 0
+                Cnt_CoachingChildren = 0
+            End If
+
+            Prev_Name = Data_Name
+            Prev_Role = Data_Role
+            Prev_Role_UC = Prev_Role.ToUpper
+
+            Prev_Email = Data_Email
+            Prev_Age_Group_Id = Data_Age_Group_Id
+
+            Select Case UCase(Trim(Data_QualificationAwardType))
+
+                Case "CRB"
+                    If Data_QualificationAward = "Pending CRB Check" Then
+                        If Field_CRB <> "" Then
+                            Field_CRB = Field_CRB & "<br>"
+                        End If
+                        Field_CRB = Field_CRB & "CRB Applied For" & "<br>"
+                    Else
+                        If Data_QualificationAward = "CRB Check - not required under 16" Then
+                            Field_CRB = Field_CRB & "N/A Under 16 Review" & "<br>"
+                        End If
+
+                        Field_CRB = Field_CRB & Trim(Data_DateExpires) & "<br>"
+                        If Data_DateExpires < Now() Or Data_DateExpires = "Date Not Recorded" Then
+                            'CRB expired !!!
+                            If Data_Age_Group <> "SENIOR" Then
+                                Field_CRB = Field_CRB & "<font color=red>Expired !!!</font>"
+                            End If
+                        Else
+                            MonthDiff_int = DateDiff("m", Now(), Data_DateExpires)
+                            If MonthDiff_int < 6 Then
+                                Field_CRB = Field_CRB & "<font color=orange>Expires within 6 months</font>"
+                            End If
+                        End If
+                    End If
+
+                Case "COACHTAG"
+                    Field_TAG = Field_TAG & Data_DateObtained & "<br>"
+                    Cnt_Tag = Cnt_Tag + 1
+
+                Case "RUGBYREADY"
+                    Field_RugbyReady = Field_RugbyReady & Data_DateObtained & "<br>"
+                    Cnt_RugbyReady = Cnt_RugbyReady + 1
+
+                Case "COACHCHILDREN"
+                    Field_CoachingChildren = Field_CoachingChildren & Data_DateObtained & "<br>"
+                    Cnt_CoachingChildren = Cnt_CoachingChildren + 1
+
+                Case "COACHL1"
+                    Field_L1 = Field_L1 & Data_DateObtained & "<br>"
+                    Cnt_L1 = Cnt_L1 + 1
+
+                Case "COACHL2"
+                    Field_L2 = Field_L2 & Data_DateObtained & "<br>"
+                    Cnt_L2 = Cnt_L2 + 1
+
+                Case "PROTECT"
+                    Field_SAP = Field_SAP & Data_DateObtained & "<br>"
+                    'Field_SAP = Field_SAP & Data_DateExpires & "<br>"
+
+                    If IsDate(Data_DateExpires) = True Then
+                        If Data_DateExpires < Now() Then
+                            'SAP expired !!!
+                            Field_SAP = Field_SAP & "<font color=red>Expired !!!</font>"
+                        Else
+                            If IsDate(Data_DateObtained) = True Then
+                                MonthDiff_int = DateDiff("m", Data_DateObtained, Now())
+                                If MonthDiff_int > 36 Then
+                                    Field_SAP = Field_SAP & "<font color=orange>More than 3 years old - Refresher may be useful</font>"
+                                End If
+                            End If
+
+                            Cnt_SAP = Cnt_SAP + 1
+
+                            MonthDiff_int = DateDiff("m", Now(), Data_DateExpires)
+                            If MonthDiff_int < 6 Then
+                                Field_SAP = Field_SAP & "<font color=orange>Expires within 6 months</font>"
+                            End If
+                        End If
+                    Else
+                        'No Expiry Date entered
+                        Field_SAP = Field_SAP & "<font color=red>Expired !!!</font>"
+                    End If
+
+
+                Case "REFEREE"
+                    If Field_REF <> "" Then
+                        Field_REF = Field_REF & "<br>"
+                    End If
+
+                    If Data_QualificationAward = "Referee Senior Matches" Then
+                        'Date Not Reqd
+                        Field_REF = Field_REF & Data_QualificationAward & "<br>"
+                    Else
+                        Field_REF = Field_REF & Data_QualificationAward & " - " & Data_DateObtained & "<br>"
+                    End If
+
+                    RefCoursePos_int = InStr(Data_QualificationAward, "ELRA")
+                    If RefCoursePos_int > 0 Then
+                        Cnt_REF = Cnt_REF + 1
+                    End If
+
+                    RefCoursePos_int = InStr(Data_QualificationAward, "NFRC2")
+                    'The ELRA courses replaced this course, therefore count the 2nd part as the ELRA course
+                    If RefCoursePos_int > 0 Then
+                        Cnt_REF = Cnt_REF + 1
+                    End If
+
+                    RefCoursePos_int = InStr(Data_QualificationAward, "NRMMC")
+                    If RefCoursePos_int > 0 Then
+                        Cnt_REF_Mini = Cnt_REF_Mini + 1
+                    End If
+
+                    RefCoursePos_int = InStr(Data_QualificationAward, "RMMR")
+                    If RefCoursePos_int > 0 Then
+                        Cnt_REF_Mini = Cnt_REF_Mini + 1
+                    End If
+
+                Case "FIRSTAID"
+                    If Field_1stAid <> "" Then
+                        Field_1stAid = Field_1stAid & "<BR>"
+                    End If
+                    Field_1stAid = Field_1stAid & Data_QualificationAward & " - " & Data_DateExpires & "<br>"
+                    If Data_DateExpires <> "Date Not Recorded" Then
+                        If Data_DateExpires < Now() Then
+                            Field_1stAid = Field_1stAid & "<font color=red>Expired !!!</font><br>"
+                        Else
+                            Cnt_1stAid = Cnt_1stAid + 1
+                        End If
+                    Else
+                        'Course taken date unknown, only display the date take if populated.
+                        Cnt_1stAid = Cnt_1stAid + 1
+                        If Data_DateObtained <> "Date Not Recorded" Then
+                            Field_1stAid = Field_1stAid & "Course taken : " & Data_DateObtained & "<br>"
+                        End If
+                    End If
+
+                Case "NONE"
+                    'Do not write to the report
+
+                Case Else
+                    If Field_Oth <> "" Then
+                        Field_Oth = Field_Oth & "<br>"
+                    End If
+                    Field_Oth = Field_Oth & Data_QualificationAward & " - " & Data_DateObtained & "<br>"
+            End Select
+
+            Club_RS.MoveNext()
+        Loop
+
+        'Process the last person found.
+        If All_Records_Read = False Then
+            All_Records_Read = True
+            Data_Name = "NO MORE RECORDS"
+            GoTo NewPerson
+        End If
+
+NoRecs:
+
+        Club_RS.Close()
+        Club_RS = Nothing
+
+        Club_Conn.Close()
+        Club_Conn = Nothing
+
+
+        PrintLine(RegFile, Report_Header)
+        PrintLine(RegFile, "</table>")
+        PrintLine(RegFile, "</HTML>")
+        FileClose(RegFile)
+
+        ExcelSheet.Application.DisplayAlerts = False
+        'ExcelSheet.SaveAs "C:\RugbyClub\Guildfordians RFC_" & Format(Now(), "DDMMYY_HHMMSS") & ".XLS"
+        ExcelSheet.SaveAs("D:\RugbyClub\Temp\Guildfordians RFC_Qualifications.XLS")
+        ExcelSheet.Application.DisplayAlerts = True
+        'http://www.tek-tips.com/viewthread.cfm?qid=1201057
+
+        ExcelSheet.Application.Quit()
+
+        If SendEmail = False Then
+            Me.Label_Progress.Text = "Creation of Qualification list completed."
+            MsgBox(Me.Label_Progress.Text)
+            Exit Sub
+        End If
+
+        ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+        'Email Qualifications
+        ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+        Dim Email_Body As String = ""
+        Dim Email_CC As String = ""
+
+        If Now().Day <= 7 Or (Now().Day > 15 And Now().Day < 22) Then
+            'Add coaches to the email
+            Email_CC = "junior.coaches@grfc.co.uk"
+            Email_Body = Email_Body & "Coaches - please review the qualifications for you Age Group and arrange for any shortages highlighted to be resolved. Please can you also check with you coaching team to see if they have any qualifications which have not been recorded, these may have been award for other sports or at work." & vbCrLf & vbCrLf
+        End If
+
+        Email_Body = Email_Body & "Many thanks" & vbCrLf & _
+        "Tracy Davies" & vbCrLf & _
+        "Membership Secretary " & vbCrLf & vbCrLf
+
+        If Utility_Send_Email("coaching.coordinator@grfc.co.uk ; junior.welfare@grfc.co.uk ; safety@grfc.co.uk ; club.secretary@grfc.co.uk ", Email_CC, "", "", "Guildfordians RFC - Age Group Qualifications & DBS", Email_Body, "D:\RugbyClub\Temp\Qualifications.html", "", "", "", "", False) = True Then
+
+        End If
+
+        ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+        'Surrey Rugby Sheet
+        ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+        Email_Body = ""
+        Email_Body = "Please find attached the Age Group Qualifications using the Surrey Rugby spreadsheet." & vbCrLf & vbCrLf
+        Email_Body = Email_Body & "Many thanks" & vbCrLf & _
+            "Tracy Davies" & vbCrLf & _
+            "Membership Secretary " & vbCrLf & vbCrLf
+
+        If Utility_Send_Email("coaching.coordinator@grfc.co.uk ; club.secretary@grfc.co.uk ", "", "", "", "Guildfordians RFC - Age Group Qualifications & CRB - Surrey Rugby", Email_Body, "D:\RugbyClub\Temp\Guildfordians RFC_Qualifications.XLS", "", "", "", "", False) = True Then
+
+        End If
+
+        If Now().Day >= 7 And Now().Day < 14 Then
+            'Call CertChase
+        Else
+            'Already chased this month
+        End If
+
+        Me.Label_Progress.Text = "Creation of Qualification list completed and emailed."
+        MsgBox(Me.Label_Progress.Text)
+
+
+
+
+    End Sub
+
+
+
+    Sub CertChase()
+
+        Dim Report_Header As String = ""
+        Dim Prev_Age_Group As String = ""
+        Dim Prev_Name As String = ""
+        Dim Prev_Role As String = ""
+
+        Dim Field_CRB As String = ""
+        Dim Field_TAG As String = ""
+        Dim Field_RugbyReady As String = ""
+        Dim Field_L1 As String = ""
+        Dim Field_L2 As String = ""
+        Dim Field_REF As String = ""
+        Dim Field_SAP As String = ""
+        Dim Field_1stAid As String = ""
+        Dim Field_Oth As String = ""
+        Dim FntSt As String = ""
+        Dim FntEnd As String = ""
+
+        Dim Cnt_Tag As Integer = 0
+        Dim Cnt_RugbyReady As Integer = 0
+        Dim Cnt_L1 As Integer = 0
+        Dim Cnt_L2 As Integer = 0
+        Dim Cnt_1stAid As Integer = 0
+        Dim Cnt_SAP As Integer = 0
+        Dim Cnt_REF As Integer = 0
+        Dim Cnt_REF_Mini As Integer = 0
+        Dim All_Records_Read As Boolean = False
+
+
+        Dim CharPos As Integer = 0
+        Dim Email_Needed As Boolean
+        Dim Email_txt As String = 0
+
+
+
+        Dim Cnt1 As Integer = 0
+
+        Dim Data_CopyOfCertificateOnFile As String = ""
+        Dim Data_Age_Group As String = ""
+        Dim Data_QualificationAwardType As String = ""
+        Dim Data_QualificationAward As String = ""
+        Dim Data_Name As String = ""
+        Dim Data_DateObtained As String = ""
+        Dim Data_DateExpires As String = ""
+        Dim Data_Email_Addr1 As String = ""
+        Dim Data_Email_Addr2 As String = ""
+        Dim Data_Role As String = ""
+
+        Dim Course_Booked_Text As String = "<i><font color = orange>Course Booked</font></i>"
+
+
+        Dim Club_Conn As ADODB.Connection = New ADODB.Connection
+        Dim Club_RS As ADODB.Recordset = New ADODB.Recordset
+
+        Dim SQL As String = "SELECT * from [Query Qualifications]"
+
+        Club_Conn.ConnectionString = "provider=microsoft.jet.oledb.4.0;data source=D:\RugbyClub\RugbyClub.mdb"
+        Club_Conn.Open()
+
+        Club_RS.ActiveConnection = Club_Conn
+        Club_RS.let_Source(SQL)
+        Club_RS.Open()
+
+
+        'Process all of the records.
+        Do While Not Club_RS.EOF
+
+            Email_txt = ""
+            Email_Needed = True
+
+            Data_Age_Group = Club_RS("Age_Group").Value.ToString.Trim
+            Data_QualificationAwardType = Club_RS("QualificationAwardType").Value.ToString.Trim
+
+            If Club_RS("Age_GroupId").Value <> 999 Then
+                Data_Name = Club_RS("Name").Value.ToString.TrimEnd
+                Data_QualificationAward = Club_RS("QualificationAward").Value.ToString.Trim
+                Data_DateObtained = Club_RS("DateObtained").Value.ToString.TrimEnd
+                Data_DateExpires = Club_RS("DateExpires").Value.ToString.TrimEnd
+                Data_DateExpires = Club_RS("DateExpires").Value.ToString.TrimEnd
+                Data_CopyOfCertificateOnFile = Club_RS("CopyOfCertificateOnFile").Value.ToString.Trim
+
+                Data_Email_Addr1 = Club_RS("Email").Value.ToString.Trim
+                Data_Email_Addr2 = Club_RS("2nd E-mail").Value.ToString.Trim
+
+                CharPos = InStr(Data_Name, " ")
+                Email_txt = "Dear " & VB.Left(Data_Name, (CharPos - 1)) & "," & vbCrLf & "in order to maintain our Mini \ Midi RFU seal of approval and work towards the whole club seal of approval we need to have recorded details with evidence of all the courses our coaches \ helpers have completed. These courses may be coaching courses or other course like Child Protection, First Aid or a CRB check in the name of the club. If you have done any courses that you think may be relevant please let us know."
+
+                If Data_DateObtained = "" Then
+                    Data_DateObtained = "Date Not Recorded  - ** Please Provide the date of the Course **."
+                    Email_Needed = True
+                End If
+
+                Email_txt = Email_txt & vbCrLf & vbCrLf & "Course \ Award : " & Data_QualificationAward & "  Date Obtained : " & Data_DateObtained & "  (" & Data_Name & ")  " & vbCrLf & vbCrLf
+
+                If Data_CopyOfCertificateOnFile = "" = True Then
+                    Email_Needed = True
+                    Email_txt = Email_txt & " ** The club does not have a copy of the Certificate, please can you copy the certificate & email it to us. If no certificate was issued please let me know. **" & vbCrLf
+                End If
+
+                Email_txt = Email_txt & vbCrLf & vbCrLf & "Apologies if you have already provided this information, if you could provide it again it would be appreciated." & vbCrLf & vbCrLf   ' & "If any information is incorrect please let me know." & vbCrLf & vbCrLf
+
+
+                Email_txt = Email_txt & "Many thanks " & vbCrLf & "Simon Davies" & vbCrLf & "Club Sec - Guildfordians RFC"
+
+                If Data_QualificationAward = "No Qualification \ Award Recorded" Or UCase(Data_QualificationAward) = "PENDING CRB CHECK" Then
+                    Email_Needed = False
+                End If
+
+                If Data_DateExpires = "" Then
+                    'Not expired as no date enterd
+                Else
+                    'Date Entered
+                    If DateDiff("d", Now(), Data_DateExpires) > 0 Then
+                        Debug.Print(Data_DateExpires & "  " & Now())
+                    Else
+                        Email_Needed = False
+                    End If
+                End If
+
+                If Data_DateObtained = "01/01/1901" Then
+                    Email_Needed = False
+                End If
+
+                If Email_Needed = True Then
+                    If Utility_Send_Email(Data_Email_Addr1, "", "", "H", "Guildfordians RFC Award \ Qualification Audit : " & Data_QualificationAward & " - Reply Needed.", Email_txt, "", "", "", "", "", False) Then
+                    End If
+                    Cnt1 = Cnt1 + 1
+                End If
+            End If
+
+SkipRecord:
+
+            Club_RS.MoveNext()
+        Loop
+
+NoRecs:
+        Club_RS.Close()
+        Club_RS = Nothing
+
+        Club_Conn.Close()
+        Club_Conn = Nothing
+
+Proced_End:
+        MsgBox("Chasing Completed, emails sent : " & Cnt1)
+    End Sub
+
+
+    Sub SendEmail_CertChase(ByVal Email_Txt As String, ByVal EmailTo As String, ByVal EmailCC As String, ByVal Data_QualificationAward As String)
+
+        If Utility_Send_Email(EmailTo, EmailCC, "", "H", "Guildfordians RFC Award \ Qualification Audit : " & Data_QualificationAward & " - Reply Needed.", Email_Txt, "", "", "", "", "", False) Then
+        End If
+
+    End Sub
+
+
+
+    Sub Prepare_DBSChase_Email(ByVal Name As String, ByVal EmailTo As String, ByVal EmailCC As String, ByVal CRBStatus As String, ByVal AgeGroup As String, ByVal Prev_Age_Group_Id As String)
+
+        AgeGroup = AgeGroup.Trim
+        EmailTo = EmailTo.Trim
+
+        Dim Email_txt As String = ""
+        Dim Mess_body1 As String = ""
+        Dim Pos As Integer = 0
+        Dim FirstName As String = ""
+        Pos = InStr(Name, " ")
+
+
+        If Now.Day >= 7 And Now.Day < 14 Then
+            'Contine - only send out the 1st week of the month
+        Else
+            'Already chased this month
+            Exit Sub
+        End If
+
+        If Val(Prev_Age_Group_Id) >= 200 Then
+            'Dont sen email
+            Exit Sub
+        End If
+
+        If EmailTo = "" Then
+            'Dont send email
+            Exit Sub
+        End If
+
+        Static NoOfEmails As Integer
+        NoOfEmails = NoOfEmails + 1
+
+
+        Pos = InStr(Name, " ")
+        FirstName = Trim(VB.Left(Name, Pos))
+
+        Email_txt = "Dear " & FirstName & ", " & vbCrLf & _
+        "CRB Status : " & CRBStatus$ & vbCrLf & vbCrLf & _
+        "As a member of Guildfordians RFC who has kindly offered to help coach we do require you to have completed a DBS ( previously known as CRB ) check. Regrettably even if you have completed a form previously for another organisation we do still require to be held in the Clubs name." & vbCrLf & vbCrLf & _
+        "We would therefore be grateful if you could collect a CRB form ( if you do not already have one of the new pink forms ) from the club kit shop during Sunday training." & " The form will need to be completed and returned with a copy of proof of ID ( passport, driving licence, bank statement and one other proof of address )." & vbCrLf & _
+        "The completed forms with copies of the evidence can either be returned to the club kit shop or posted to Graham Sampson ( address below )." & vbCrLf & vbCrLf & _
+        "This is a legal requirement and any person who has regular contact with Children and is not CRB cleared can be liable for a £5000 fine and a criminal conviction. " & vbCrLf & vbCrLf & _
+        "If you have any questions please call Graham Sampson on 07778 159224, we look forward to receiving your completed form back duly. If you have already got a valid CRB for the club please send us a copy of it for the club records." & vbCrLf & vbCrLf & _
+        "Yours sincerely" & vbCrLf & vbCrLf & vbCrLf & vbCrLf & _
+        "Jackie Knowles & Graham Sampson" & vbCrLf & _
+        "Welfare Officer & Club Development Officer" & vbCrLf & vbCrLf & "Graham Sampson " & vbCrLf & "4 Hillfield Close" & vbCrLf & "Guildford" & vbCrLf & "GU1 2UR"
+
+        Exit Sub
+
+        If Utility_Send_Email(EmailTo, EmailCC, "", "H", "Guildfordians RFC (" & AgeGroup & ") - Important DBS Check - Action Needed. " & CRBStatus, Email_txt, "", "", "", "", "", False) Then
+
+        End If
+
+    End Sub
+
+    Sub Create_Membership_Breakdown()
+
+        Me.Label_Progress.Text = "Creating Membership breakdown."
+
+        Dim RegFile As Integer = FreeFile()
+        FileOpen(RegFile, "D:\RugbyClub\Temp\Membership_Breakdown" & Now().ToLongDateString & ".html", OpenMode.Output, OpenAccess.Write)
+
+        'Write HTML file for report.
+        PrintLine(RegFile, "<HTML>")
+        PrintLine(RegFile, "<HEAD><title>Guildfordians RFC - Membership Breakdown" & "</title></HEAD>")
+        PrintLine(RegFile, "<Font Size=+1><b>Guildfordians RFC Membership Breakdown" & "</b></Font></br></br>")
+        PrintLine(RegFile, "<table border=2 cellspacing=1 cellpadding=3>")
+
+        PrintLine(RegFile, "<THEAD><tr>")
+        PrintLine(RegFile, "<th valign=bottom BGCOLOR=SILVER>Age Group</th>")
+        PrintLine(RegFile, "<th valign=bottom BGCOLOR=SILVER>Total Players</th>")
+        PrintLine(RegFile, "<th valign=bottom BGCOLOR=SILVER>Full Members Total</th>")
+        PrintLine(RegFile, "<th valign=bottom BGCOLOR=SILVER>Full Members who are New this Season</th>")
+        PrintLine(RegFile, "<th valign=bottom BGCOLOR=SILVER>Temporary Members Total</th>")
+        PrintLine(RegFile, "<th valign=bottom BGCOLOR=SILVER>Temporary Members who are New this Season</th>")
+        PrintLine(RegFile, "<th valign=bottom BGCOLOR=SILVER>Temporary Members Not Attended</th>")
+        PrintLine(RegFile, "<th valign=bottom BGCOLOR=SILVER>Temporary Members Attended Twice or Less</th>")
+        PrintLine(RegFile, "<th valign=bottom BGCOLOR=SILVER>Temporary Members Attended Three time or More</th>")
+        PrintLine(RegFile, "</tr></THEAD>")
+
+        Dim Club_Conn As ADODB.Connection = New ADODB.Connection
+        Dim Club_RS As ADODB.Recordset = New ADODB.Recordset
+
+        Dim SQL As String = "SELECT * from Q_Registers order by Age_GroupId ASC"
+
+        'Dim BirthDate_Alert_Str As String = ""
+        'Dim BirthDate_Alert_Dt As Date = Nothing
+        'Dim Birthday_Date_Diff As Long = 0
+
+        'GoTo AAA:
+        Dim Age_Grp_Prev As String = ""
+        Dim Age_Grp_Full_Member As Integer = 0
+        Dim Age_Grp_Full_Member_New As Integer = 0
+        Dim Age_Grp_Temp_Member As Integer = 0
+        Dim Age_Grp_Temp_Member_Attend_0 As Integer = 0
+        Dim Age_Grp_Temp_Member_Attend_2L As Integer = 0
+        Dim Age_Grp_Temp_Member_Attend_3M As Integer = 0
+        Dim Age_Grp_Temp_Member_New As Integer = 0
+        Dim SeasonStart As Date = Nothing
+
+        Dim Total_Full_Member As Integer = 0
+        Dim Total_Full_Member_New As Integer = 0
+        Dim Total_Temp_Member As Integer = 0
+        Dim Total_Temp_Member_New As Integer = 0
+
+        Dim Total_Age_Grp_Full_Member_New As Integer = 0
+        Dim Total_Age_Grp_Temp_Member_Attend_0 As Integer = 0
+        Dim Total_Age_Grp_Temp_Member_Attend_2L As Integer = 0
+        Dim Total_Age_Grp_Temp_Member_Attend_3M As Integer = 0
+        Dim Total_Age_Grp_Temp_Member_New As Integer = 0
+
+        Dim Data_Age_Group As String = ""
+        Dim Data_Member_Type_UC As String = ""
+        Dim Data_Times_Attended As Integer = 0
+
+        If Mid(Now(), 4, 2) <= "12" And Mid(Now(), 4, 2) >= "06" Then
+            SeasonStart = "01/06/" & Mid(Now(), 7, 4)
+        Else
+            'After Xmas
+            SeasonStart = DateAdd("yyyy", -1, Now())
+            SeasonStart = "01/06/" & Mid(SeasonStart, 7, 4)
+        End If
+
+        Club_Conn.ConnectionString = "provider=microsoft.jet.oledb.4.0;data source=D:\RugbyClub\RugbyClubFrontEnd.mdb"
+        Club_Conn.Open()
+
+        Club_RS.ActiveConnection = Club_Conn
+        Club_RS.let_Source(SQL)
+        Club_RS.Open()
+
+        Do While Not Club_RS.EOF
+            Data_Age_Group = Club_RS("Age_Group").Value.ToString.Trim
+            Data_Member_Type_UC = Club_RS("Member_Type").Value.ToString.Trim.ToUpper
+
+            If Age_Grp_Prev <> Data_Age_Group Then
+
+                If Age_Grp_Prev <> "" Then
+                    PrintLine(RegFile, "<tr>")
+                    PrintLine(RegFile, "<td><b>" & Age_Grp_Prev & "</b></td>")
+                    PrintLine(RegFile, "<td>" & (Age_Grp_Full_Member + Age_Grp_Temp_Member) & "</td>")
+                    PrintLine(RegFile, "<td>" & Age_Grp_Full_Member & "</td>")
+                    PrintLine(RegFile, "<td>" & Age_Grp_Full_Member_New & "</td>")
+
+                    PrintLine(RegFile, "<td>" & Age_Grp_Temp_Member & "</td>")
+                    PrintLine(RegFile, "<td>" & Age_Grp_Temp_Member_New & "</td>")
+
+                    PrintLine(RegFile, "<td>" & Age_Grp_Temp_Member_Attend_0 & "</td>")
+                    PrintLine(RegFile, "<td>" & Age_Grp_Temp_Member_Attend_2L & "</td>")
+                    PrintLine(RegFile, "<td>" & Age_Grp_Temp_Member_Attend_3M & "</td>")
+                    PrintLine(RegFile, "</tr>")
+                End If
+
+                Total_Full_Member = Total_Full_Member + Age_Grp_Full_Member
+                Total_Full_Member_New = Total_Full_Member_New + Age_Grp_Full_Member_New
+                Total_Temp_Member = Total_Temp_Member + Age_Grp_Temp_Member
+                Total_Temp_Member_New = Total_Temp_Member_New + Age_Grp_Temp_Member_New
+
+                If Data_Age_Group.ToUpper = "SENIOR" Then
+                    PrintLine(RegFile, "<tr>")
+                    PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & "Junior Totals" & "</b></td>")
+                    PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & (Total_Full_Member + Total_Temp_Member) & "</b></td>")
+                    PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Full_Member & "</b></td>")
+                    PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Age_Grp_Full_Member_New & "</b></td>")
+                    PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Temp_Member & "</b></td>")
+                    PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Age_Grp_Temp_Member_New & "</b></td>")
+
+                    PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Age_Grp_Temp_Member_Attend_0 & "</b></td>")
+                    PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Age_Grp_Temp_Member_Attend_2L & "</b></td>")
+                    PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Age_Grp_Temp_Member_Attend_3M & "</b></td>")
+                    PrintLine(RegFile, "</tr>")
+                End If
+
+                'Reset Total
+                Age_Grp_Full_Member = 0
+                Age_Grp_Full_Member_New = 0
+                Age_Grp_Temp_Member = 0
+                Age_Grp_Temp_Member_Attend_0 = 0
+                Age_Grp_Temp_Member_Attend_2L = 0
+                Age_Grp_Temp_Member_Attend_3M = 0
+                Age_Grp_Temp_Member_New = 0
+
+                Age_Grp_Prev = Data_Age_Group
+            End If
+
+            'Increment Total
+            If Data_Member_Type_UC = "TEMP MEMBER" Then
+                Age_Grp_Temp_Member = Age_Grp_Temp_Member + 1
+
+                If IsDBNull(Club_RS("Times Attended").Value) Then
+                    Data_Times_Attended = 0
+                Else
+                    Data_Times_Attended = Club_RS("Times Attended").Value
+                End If
+
+                If Data_Times_Attended = 0 Then
+                    Age_Grp_Temp_Member_Attend_0 = Age_Grp_Temp_Member_Attend_0 + 1
+                    Total_Age_Grp_Temp_Member_Attend_0 = Total_Age_Grp_Temp_Member_Attend_0 + 1
+                Else
+
+                    If Data_Times_Attended = 1 Or Data_Times_Attended = 2 Then
+                        Age_Grp_Temp_Member_Attend_2L = Age_Grp_Temp_Member_Attend_2L + 1
+                        Total_Age_Grp_Temp_Member_Attend_2L = Total_Age_Grp_Temp_Member_Attend_2L + 1
+                    End If
+
+                    If Data_Times_Attended >= 3 Then
+                        Age_Grp_Temp_Member_Attend_3M = Age_Grp_Temp_Member_Attend_3M + 1
+                        Total_Age_Grp_Temp_Member_Attend_3M = Total_Age_Grp_Temp_Member_Attend_3M + 1
+                    End If
+                End If
+
+                If IsDBNull(Club_RS("DateJoined").Value) = True Then
+                    Age_Grp_Temp_Member_New = Age_Grp_Temp_Member_New + 1
+                    Total_Age_Grp_Temp_Member_New = Total_Age_Grp_Temp_Member_New + 1
+                End If
+
+            Else
+                If Data_Member_Type_UC = "FULL MEMBER" Then
+                    Age_Grp_Full_Member = Age_Grp_Full_Member + 1
+
+                    If Club_RS("DateJoined").Value >= SeasonStart Then
+                        Age_Grp_Full_Member_New = Age_Grp_Full_Member_New + 1
+                        Total_Age_Grp_Full_Member_New = Total_Age_Grp_Full_Member_New + 1
+                    End If
+                End If
+
+                If Data_Member_Type_UC = "LIFETIME SOCIAL MEMBER" Or Data_Member_Type_UC = "SOCIAL MEMBER" Then
+                    Age_Grp_Full_Member = Age_Grp_Full_Member + 1
+
+                    If IsDBNull(Club_RS("DateJoined").Value) = True Then
+                        'Field Null
+                        If IsDBNull(Club_RS("Subscription_Date").Value) = True Then
+                            'Cant tell when they joined so assume old
+                        Else
+                            If Club_RS("Subscription_Date").Value >= SeasonStart Then
+                                Age_Grp_Full_Member_New = Age_Grp_Full_Member_New + 1
+                                Total_Age_Grp_Full_Member_New = Total_Age_Grp_Full_Member_New + 1
+                            End If
+                        End If
+                    Else
+                        If Club_RS("DateJoined").Value >= SeasonStart Then
+                            Age_Grp_Full_Member_New = Age_Grp_Full_Member_New + 1
+                            Total_Age_Grp_Full_Member_New = Total_Age_Grp_Full_Member_New + 1
+                        End If
+                    End If
+                End If
+            End If
+            Club_RS.MoveNext()
+        Loop
+
+        If Data_Member_Type_UC <> "NON PLAYING" Then
+            PrintLine(RegFile, "<tr>")
+            PrintLine(RegFile, "<td>" & Age_Grp_Prev & "</td>")
+            PrintLine(RegFile, "<td>" & (Age_Grp_Full_Member + Age_Grp_Temp_Member) & "</td>")
+            PrintLine(RegFile, "<td>" & Age_Grp_Full_Member & "</td>")
+            PrintLine(RegFile, "<td>" & Age_Grp_Full_Member_New & "</td>")
+            PrintLine(RegFile, "<td>" & Age_Grp_Temp_Member & "</td>")
+            PrintLine(RegFile, "<td>" & Age_Grp_Full_Member_New & "</td>")
+            PrintLine(RegFile, "<td>" & Age_Grp_Temp_Member_Attend_0 & "</td>")
+            PrintLine(RegFile, "<td>" & Age_Grp_Temp_Member_Attend_2L & "</td>")
+            PrintLine(RegFile, "<td>" & Age_Grp_Temp_Member_Attend_3M & "</td>")
+            PrintLine(RegFile, "</tr>")
+
+            'Reset Total
+            Total_Full_Member = Total_Full_Member + Age_Grp_Full_Member
+            Total_Full_Member_New = Total_Full_Member_New + Age_Grp_Full_Member_New
+            Total_Temp_Member = Total_Temp_Member + Age_Grp_Temp_Member
+            Total_Temp_Member_New = Total_Temp_Member_New + Age_Grp_Temp_Member_New
+        End If
+
+        Club_RS.Close()
+        Club_RS = Nothing
+        Club_Conn.Close()
+        Club_Conn = Nothing
+
+        PrintLine(RegFile, "<tr>")
+        PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & "Grand Totals" & "</b></td>")
+        PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & (Total_Full_Member + Total_Temp_Member) & "</b></td>")
+        PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Full_Member & "</b></td>")
+        PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Age_Grp_Full_Member_New & "</b></td>")
+        PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Temp_Member & "</b></td>")
+        PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Age_Grp_Temp_Member_New & "</b></td>")
+        PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Age_Grp_Temp_Member_Attend_0 & "</b></td>")
+        PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Age_Grp_Temp_Member_Attend_2L & "</b></td>")
+        PrintLine(RegFile, "<td BGCOLOR=SILVER><b>" & Total_Age_Grp_Temp_Member_Attend_3M & "</b></td>")
+        PrintLine(RegFile, "</tr>")
+        PrintLine(RegFile, "</table><br><br>")
+        PrintLine(RegFile, "</body>")
+        PrintLine(RegFile, "</HTML>")
+        FileClose(1)
+
+        Me.Label_Progress.Text = "Completed creating Membership breakdown."
+
+    End Sub
+
+    Sub Create_Report(ByVal Passed_SQL As String, ByVal Passed_ReportTitle As String, ByVal Passed_ReportName As String, ByVal Passed_ReportEmailTo As String, ByVal Passed_Email_Body As String)
+
+        Me.Label_Progress.Text = "Creating Report : " & Passed_ReportName
+
+        Passed_ReportEmailTo = Passed_ReportEmailTo.Trim.ToLower
+        Passed_ReportName = Passed_ReportName.Trim
+        Passed_SQL = Passed_SQL.Trim
+        Passed_ReportTitle = Passed_ReportTitle.Trim
+        Passed_Email_Body = Passed_Email_Body.Trim
+
+        If Passed_Email_Body = "" Then
+            Passed_Email_Body = "Please find attached your report."
+        End If
+
+        If Passed_ReportTitle = "" Then
+            Passed_ReportTitle = "No Report Title passed to routine"
+        End If
+
+        If Passed_ReportName = "" Then
+            Passed_ReportName = "NoReportNamePassedToRoutine"
+        End If
+
+        If Passed_SQL = "" Then
+            MsgBox("Error - No SQL passed to routine for Report Title : " & Passed_ReportTitle)
+            Exit Sub
+        End If
+
+        Dim Excel_Row As Integer = 1
+        Dim ReportFileName As String = "D:\RugbyClub\Temp\Guildfordians RFC_" & Passed_ReportName & ".xlsx"
+
+        'Delete the previous file if it exists
+        If Dir(ReportFileName) <> "" Then
+            Kill(ReportFileName)
+        End If
+
+        Dim misValue As Object = System.Reflection.Missing.Value
+
+        Dim xlApp As Microsoft.Office.Interop.Excel.Application = CreateObject("Excel.Application")
+        Dim xlWorkBook As Microsoft.Office.Interop.Excel.Workbook = xlApp.Workbooks.Add(misValue)
+        Dim xlWorkSheet As Microsoft.Office.Interop.Excel.Worksheet = xlWorkBook.Sheets("sheet1")
+
+        Dim Style_Hdr As Microsoft.Office.Interop.Excel.Style = xlWorkSheet.Application.ActiveWorkbook.Styles.Add("Style_Hdr")
+        Style_Hdr.Font.Bold = True
+        Style_Hdr.Interior.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.LightGray)
+
+        Dim Style_Bold As Microsoft.Office.Interop.Excel.Style = xlWorkSheet.Application.ActiveWorkbook.Styles.Add("Style_Bold")
+        Style_Bold.Font.Bold = True
+
+
+        xlWorkSheet.Cells(Excel_Row, 1).Style = "Style_Bold"
+        xlWorkSheet.Cells(Excel_Row, 1).Value = "Report : " & Passed_ReportTitle
+
+        Dim Club_Conn As ADODB.Connection = New ADODB.Connection
+        Dim Club_RS As ADODB.Recordset = New ADODB.Recordset
+
+        Dim Lines_Read As Integer = 0
+        Dim DB_Field_Cnt As Integer = 0
+
+        Club_Conn.ConnectionString = "provider=microsoft.jet.oledb.4.0;data source=D:\RugbyClub\RugbyClubFrontEnd.mdb"
+        Club_Conn.Open()
+
+        Club_RS.ActiveConnection = Club_Conn
+        Club_RS.let_Source(Passed_SQL)
+        Club_RS.Open()
+
+        Do While Not Club_RS.EOF
+            Lines_Read = Lines_Read + 1
+            Excel_Row = Excel_Row + 1
+
+            If Lines_Read = 1 Then
+                'Read the database field names for the headers
+                DB_Field_Cnt = Club_RS.Fields.Count - 1
+                For Db_Field_Read = 0 To DB_Field_Cnt
+                    xlWorkSheet.Cells(Excel_Row, Db_Field_Read + 1).Style = "Style_Hdr"
+                    xlWorkSheet.Cells(Excel_Row, Db_Field_Read + 1) = Club_RS.Fields(Db_Field_Read).Name.ToString
+                Next
+                Excel_Row = Excel_Row + 1
+            End If
+
+            'Now read the data
+            For Db_Field_Read = 0 To DB_Field_Cnt
+                xlWorkSheet.Cells(Excel_Row, Db_Field_Read + 1) = Club_RS.Fields(Db_Field_Read).Value.ToString
+            Next
+            Club_RS.MoveNext()
+        Loop
+        Excel_Row = Excel_Row + 1
+        xlWorkSheet.Cells(Excel_Row, 1).Style = "Style_Hdr"
+        xlWorkSheet.Cells(Excel_Row, 1) = "End of Report"
+
+        Club_RS.Close()
+        Club_RS = Nothing
+        Club_Conn.Close()
+        Club_Conn = Nothing
+        xlWorkSheet.Range("A1:X1").EntireColumn.AutoFit()
+        xlWorkSheet.Application.DisplayAlerts = False
+        xlWorkSheet.SaveAs(ReportFileName)
+        xlWorkSheet.Application.DisplayAlerts = True
+        xlWorkSheet.Application.Quit()
+
+        Me.Label_Progress.Text = "Completed creating Report : " & Passed_ReportName
+
+        If Passed_ReportEmailTo <> "" Then
+            If Utility_Send_Email(Passed_ReportEmailTo, "", "", "", "Guildfordians RFC Report : " & Passed_ReportTitle, Passed_Email_Body, ReportFileName, "", "", "", "", False) = True Then
+                Me.Label_Progress.Text = "Completed Creating Report : " & Passed_ReportName & " - Report Emailed."
+            End If
+        End If
+    End Sub
+
+
+
+    Sub Registers_Create(ByVal Age_Group As String, ByVal Passed_SQL As String, ByVal EmailTo As String, ByVal EmailCC As String, ByVal DutyRota_Week1 As String, ByVal DutyRota_Week2 As String, ByVal DutyRota_Week3 As String, ByVal SendEmail As Boolean)
+
+        Me.Label_Progress.Text = "Creating Register for : " & Age_Group
+
+        'use for testing
+        'EmailTo = "simon.p.davies@btconnect.com"
+        'EmailCC = "spud72@btconnect.com"
+        Dim Attachment1 As String = ""
+        Dim Attachment2 As String = ""
+        Dim Attachment3 As String = ""
+        Dim Attachment4 As String = ""
+        Dim Attachment5 As String = ""
+
+        Dim Players_Cnt As Integer = 0
+        Dim Players_Paid_Cnt As Integer = 0
+        Dim Players_Form_Cnt As Integer = 0
+
+        Dim DutyRota_Week1_Txt As String = ""
+        Dim DutyRota_Week2_Txt As String = ""
+        Dim DutyRota_Week3_Txt As String = ""
+
+        Dim Data_Parents_Names As String = ""
+        Dim AgeGroup_Fixtures(99) As String
+        Dim AgeGroup_Fixtures_Cnt As Integer = 0
+        Dim AgeGroup_Email_Addresses(999) As String
+        Dim AgeGroup_Email_Addresses_Cnt As Integer = 0
+        Dim Excel_Row As Integer = 18
+
+        Dim Session_Date_dtm As Date = Now.Date
+
+        Dim BirthDay_Calc_Date_dtm As Date = Nothing
+
+        Dim Age_Group_Shortened As String = Age_Group.Trim.ToUpper
+
+        Dim XL As Microsoft.Office.Interop.Excel.Application
+        Dim ExcelSheet As Microsoft.Office.Interop.Excel.Workbook
+
+
+        If VB.Right(Age_Group_Shortened, 1) = "S" Then
+            'Remove character s from the end of the string as stored on the diary withut it.
+            Age_Group_Shortened = VB.Left(Age_Group_Shortened, Len(Age_Group_Shortened) - 1)
+        End If
+
+        For AgeGroup_Email_Addresses_Cnt = 0 To 999
+            AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = ""
+        Next
+
+        Call Registers_Read_Age_Group_Fixtures(AgeGroup_Fixtures, Age_Group_Shortened)
+
+        Dim RegFile As Integer = 1
+        Dim EmailFile As Integer = 2
+        Attachment1 = Database_Temp_Directory & "Register_" & Age_Group & ".html"
+        Attachment2 = Database_Temp_Directory & "Emails_" & Age_Group & ".txt"
+        FileOpen(RegFile, Attachment1, OpenMode.Output, OpenAccess.Write)
+        FileOpen(EmailFile, Attachment2, OpenMode.Output, OpenAccess.Write)
+
+        'Write HTML file for report.
+        PrintLine(RegFile, "<html>")
+        PrintLine(RegFile, "<head>")
+        If Age_Group = "Seniors" Then
+            Session_Date_dtm = DateAdd("d", (6 - (Weekday(Now()))) + 1, Now())
+
+            PrintLine(RegFile, "<title>Guildfordians RFC Register - " & Age_Group & " Session : " & Session_Date_dtm.ToLongDateString & "</title>")
+
+            XL = CreateObject("Excel.Application")
+            'Open Template
+            ExcelSheet = XL.Workbooks.Open(Database_Template_Directory & "Blank Senior Master Match Fee Sheet v1.4.xls")
+            ExcelSheet.Sheets(1).Cells((6), 2).Value = Session_Date_dtm.ToLongDateString
+            'Attach match fees spreadsheet
+
+            Attachment3 = Database_Temp_Directory & "Senior Match Fee Sheet.xls"
+            'Delete the previous file if it exists
+            If Dir(Attachment3) <> "" Then
+                Kill(Attachment3)
+            End If
+        Else
+            'Juniors
+            Session_Date_dtm = DateAdd("d", (7 - (Weekday(Now()))) + 1, Now())
+
+            PrintLine(RegFile, "<title>Guildfordians RFC Register - " & Age_Group & " Session : " & Session_Date_dtm.ToLongDateString & "</title>")
+        End If
+        PrintLine(RegFile, "</head>")
+        PrintLine(RegFile, "<table border=1 width=100% cellspacing=0 cellpadding=0 RULES=ROWS FRAME=BOX>")
+        PrintLine(RegFile, "<thead>")
+        PrintLine(RegFile, "<tr>")
+        PrintLine(RegFile, "<th width=10% align=left valign=bottom BGCOLOR=SILVER><font size=-1>Name</font></th>")
+        PrintLine(RegFile, "<th width=1% valign=bottom BGCOLOR=SILVER><font size=-1>F<br>o<br>r<br>m</font></th>")
+        PrintLine(RegFile, "<th width=1% valign=bottom BGCOLOR=SILVER><font size=-1>P<br>a<br>i<br>d</font></th>")
+        If Age_Group <> "Seniors" Then
+            PrintLine(RegFile, "<th width=1% valign=bottom BGCOLOR=SILVER><font size=-2>A<br>t<br>t<br>e<br>n<br>d</font></th>")
+        End If
+        PrintLine(RegFile, "<th width=32% align=left valign=bottom BGCOLOR=SILVER><font size=-1><u>Register for : " & Age_Group & "</u></font><br><br><br><font size=-1>Contact Number(s)</font></th>")
+        If Age_Group = "Seniors" Then
+            PrintLine(RegFile, "<th width=22% align=left valign=bottom BGCOLOR=SILVER><font size=-1>Match Day<br>" & Session_Date_dtm.ToLongDateString & "<br><br>Email Address</font></th>")
+        Else
+            PrintLine(RegFile, "<th width=22% align=left valign=bottom BGCOLOR=SILVER><font size=-1>Coaching Session<br>" & Session_Date_dtm.ToLongDateString & "<br><br>Email Address</font></th>")
+        End If
+        PrintLine(RegFile, "<th align=left valign=bottom BGCOLOR=SILVER><font size=-1>RFU No \ DOB</font></th>")
+        PrintLine(RegFile, "<th width=15% align=left valign=bottom BGCOLOR=SILVER><font size=-1>Known Medical Conditions</font></th>")
+        PrintLine(RegFile, "</tr>")
+        PrintLine(RegFile, "</thead>")
+
+        'Dim hold_alrgy As String
+        Dim SQL As String = ""
+
+        Dim Club_Conn As ADODB.Connection = New ADODB.Connection
+        Dim Club_RS As ADODB.Recordset = New ADODB.Recordset
+
+        Club_Conn.ConnectionString = "provider=microsoft.jet.oledb.4.0;data source=D:\RugbyClub\RugbyClubFrontEnd.mdb"
+        Club_Conn.Open()
+
+        'Debug.Print("SELECT * from Q_Registers Where " & SQL & " Or Also_Playing_Senior_Rugby = -1")
+        'Authorised_To_Play_Senior_Rugby
+        If Age_Group = "Seniors" Then
+            SQL = "SELECT * from Q_Registers Where " & Passed_SQL & " Or Also_Playing_Senior_Rugby = 1 "
+        Else
+            SQL = "SELECT * from Q_Registers Where " & Passed_SQL
+        End If
+
+        Club_RS.ActiveConnection = Club_Conn
+        Club_RS.let_Source(SQL)
+        Club_RS.Open()
+
+AAA:
+        If Club_RS.BOF Then
+            'No results returned
+            GoTo NoRecs
+        Else
+            Club_RS.MoveFirst()
+        End If
+
+        Dim Total_Senior_Match_Fees_Outstanding_int As Integer = 0
+
+        Dim BirthDate_Alert_str As String = ""
+        'Dim BirthDate_Alert_Dt As Date
+        Dim Birthday_Date_Diff As Long = 0
+        Dim Data_Senior_Match_Fees_Paid As Integer = 0
+        Dim Data_Senior_Match_Fees_Due As Integer = 0
+        Dim Data_Student_Type As String = ""
+        Dim Data_Also_Playing_Senior_Rugby As Integer = 0
+        Dim Data_Comment As String = ""
+        Dim Data_Surname As String = ""
+        Dim Data_First_Name As String = ""
+        Dim Data_Home_Phone As String = ""
+        Dim Data_Emergency_Contact_Phone As String = ""
+        Dim Data_GMRFC_Form_Date As String = ""
+        Dim Data_Subscription_Date As String = ""
+        Dim Data_EMail As String = ""
+        Dim Data_2nd_EMail As String = ""
+        Dim Data_Medical_Condition As String = ""
+        Dim Data_DOB_dtm As Date = Nothing
+        Dim Data_DOB_str As String = ""
+        Dim Data_RFU_Number As String = ""
+        Dim Data_Payment_Method As String = ""
+        Dim Data_Payment As Integer = 0
+        Dim Data_Times_Attended As Integer = 0
+
+        Dim DetailsNeedAttn As String = ""
+
+        Dim Excel_Cell As String = ""
+
+        Do While Not Club_RS.EOF
+
+            Players_Cnt = Players_Cnt + 1
+
+            Data_Surname = ""
+            Data_First_Name = ""
+            Data_Home_Phone = ""
+            Data_Emergency_Contact_Phone = ""
+            Data_GMRFC_Form_Date = ""
+            Data_Subscription_Date = ""
+            Data_EMail = ""
+            Data_2nd_EMail = ""
+            Data_Medical_Condition = ""
+            Data_Also_Playing_Senior_Rugby = 0
+            Data_Senior_Match_Fees_Paid = 0
+            Data_Senior_Match_Fees_Due = 0
+            Data_Student_Type = ""
+            Data_DOB_dtm = Nothing
+            Data_DOB_str = ""
+            Data_RFU_Number = ""
+            Data_Parents_Names = ""
+            Data_Payment_Method = ""
+            Data_Payment = 0
+            Data_Times_Attended = 0
+            DetailsNeedAttn = ""
+            Data_Comment = ""
+
+            Data_Surname = Club_RS.Fields("Surname").Value.ToString.Trim
+            Data_First_Name = Club_RS.Fields("First_Name").Value.ToString.Trim
+            Data_Home_Phone = Club_RS.Fields("Home_Phone").Value.ToString.Trim
+            Data_Emergency_Contact_Phone = Club_RS.Fields("Emergency_Contact_Phone").Value.ToString.Trim
+            Data_GMRFC_Form_Date = Club_RS.Fields("GMRFC_Form_Date").Value.ToString.Trim
+            Data_Subscription_Date = Club_RS.Fields("Subscription_Date").Value.ToString.Trim
+            Data_EMail = Club_RS.Fields("Email").Value.ToString.ToLower.Trim
+            Data_2nd_EMail = Club_RS.Fields("2nd E-mail").Value.ToString.ToLower.Trim
+            Data_Medical_Condition = Club_RS.Fields("Medical_Condition").Value.ToString.Trim
+            Data_Also_Playing_Senior_Rugby = Club_RS.Fields("Also_Playing_Senior_Rugby").Value
+
+            If IsDBNull(Club_RS.Fields("SumOfMatchFeePaid").Value) = True Then
+                Data_Senior_Match_Fees_Paid = 0
+            Else
+                Data_Senior_Match_Fees_Paid = Club_RS.Fields("SumOfMatchFeePaid").Value
+            End If
+
+            If IsDBNull(Club_RS.Fields("SumOfMatchFeeDue").Value) = True Then
+                Data_Senior_Match_Fees_Due = 0
+            Else
+                Data_Senior_Match_Fees_Due = Club_RS.Fields("SumOfMatchFeeDue").Value
+            End If
+
+            Data_Student_Type = Club_RS.Fields("Student_Membership").Value.ToString.Trim
+
+            If IsDBNull(Club_RS.Fields("Birth_Date").Value) = False Then
+                Data_DOB_dtm = Club_RS.Fields("Birth_Date").Value
+            End If
+
+            Data_RFU_Number = Club_RS.Fields("RFU_Number").Value.ToString.Trim
+            Data_Parents_Names = Club_RS.Fields("Parents_Forename").Value.ToString.Trim
+            Data_Payment_Method = Club_RS.Fields("Payment_Method").Value.ToString.Trim
+            'Data_Times_Attended = CInt(Club_RS.Fields("Times Attended").Value)
+
+            If IsDBNull(Club_RS.Fields("Times Attended").Value) = True Then
+                Data_Times_Attended = 0
+            Else
+                Data_Times_Attended = Club_RS.Fields("Times Attended").Value
+            End If
+
+            If IsDBNull(Club_RS.Fields("Payment").Value) = True Then
+                Data_Payment = 0
+            Else
+                Data_Payment = Club_RS.Fields("Payment").Value
+            End If
+
+            If Data_DOB_dtm <> Nothing Then
+                If Data_DOB_dtm.Day = "29" And Data_DOB_dtm.Month = "2" Then
+                    BirthDay_Calc_Date_dtm = CDate("01" & "/" & "03" & "/" & Now.Year)
+                Else
+                    'Convert the birthday to date this year
+                    BirthDay_Calc_Date_dtm = CDate(Data_DOB_dtm.Day & "/" & Data_DOB_dtm.Month & "/" & Now.Year)
+                End If
+
+                If Age_Group = "Seniors" Then
+                    If DateDiff("Y", Session_Date_dtm, Data_DOB_dtm) = 17 Then
+                        DetailsNeedAttn = DetailsNeedAttn & "Information - Player is only 17 years old.<br>"
+                    End If
+                End If
+
+                'Convert to a string for formatting
+                Data_DOB_str = Data_DOB_dtm.ToShortDateString
+                Birthday_Date_Diff = DateDiff("d", Session_Date_dtm, BirthDay_Calc_Date_dtm)
+                If Birthday_Date_Diff >= -10 And Birthday_Date_Diff <= 10 Then
+                    'Recent \ up coming birthday
+                    Data_DOB_str = "<b>" & Data_DOB_str & "</b>"
+                End If
+
+                If Data_RFU_Number <> "" Then
+                    Data_RFU_Number = Data_RFU_Number & " - " & Data_DOB_str
+                End If
+            Else
+                'Date of birth is not provided.
+            End If
+
+            If Data_Parents_Names <> "" Then
+                If Age_Group = "Seniors" Then
+                    Data_Parents_Names = ""
+                Else
+                    Data_Parents_Names = " (" & Data_Parents_Names & ")"
+                End If
+            End If
+
+            If Data_Medical_Condition <> "None" Then
+                Data_Medical_Condition = "<b>" & Data_Medical_Condition & "</b>"
+            End If
+
+            PrintLine(RegFile, "<tr>")
+            PrintLine(RegFile, "<td width=10% valign=top><font size=-2>" & Data_First_Name & "&nbsp;" & Data_Surname & "</font></td>")
+
+            If Data_GMRFC_Form_Date = "" Then
+                PrintLine(RegFile, "<td width=1% valign=top><font size=-2><INPUT TYPE=CHECKBOX NAME=GFORM VALUE=COMP ></font></td>")
+                'No Form, if they have attended they must complete a form
+                If Data_Times_Attended > 0 Then
+                    DetailsNeedAttn = DetailsNeedAttn & "The above person has attended but has not completed a form. Attended " & Club_RS("Times Attended").Value.ToString.Trim & " times.<br>"
+                End If
+            Else
+                Players_Form_Cnt = Players_Form_Cnt + 1
+                PrintLine(RegFile, "<td width=1% valign=top><font size=-2><INPUT TYPE=CHECKBOX NAME=GFORM VALUE=COMP CHECKED=True ></font></td>")
+            End If
+
+            If Data_Subscription_Date = "" Then
+                PrintLine(RegFile, "<td width=1% valign=top><font size=-2><INPUT TYPE=CHECKBOX NAME=SUBS VALUE=PAID ></font></td>")
+            Else
+                Players_Paid_Cnt = Players_Paid_Cnt + 1
+                PrintLine(RegFile, "<td width=1% valign=top><font size=-2><INPUT TYPE=CHECKBOX NAME=SUBS VALUE=PAID CHECKED=True ></font></td>")
+            End If
+
+            If Age_Group <> "Seniors" Then
+                PrintLine(RegFile, "<td width=1% valign=top><INPUT TYPE=CHECKBOX NAME=ATTEND VALUE=ATTEND></td>")
+            Else
+                'Seniors
+                If Data_Student_Type <> "" Then
+                    Data_Comment = Data_Student_Type
+                Else
+                    If Data_Also_Playing_Senior_Rugby = -1 Then
+                        Data_Comment = "Junior Member"
+                    End If
+                End If
+
+                Excel_Cell = "A" & Trim(Str(Excel_Row))
+                ExcelSheet.Sheets(1).Cells((Excel_Row), 1).Value = (Data_First_Name & " " & Data_Surname)
+
+                If IsDBNull(Data_Subscription_Date) = False Then
+                    'membership paid
+
+                    If Data_Payment_Method = "Pay as You Play" Or Data_Payment_Method = "Standing Order" Then
+                        ExcelSheet.Sheets(1).Cells((Excel_Row), 7).Value = Data_Payment_Method
+                    Else
+                        'Lump sum paid - may be student rate
+                        If Data_Payment >= 80 Or (Data_Payment_Method <> "Part Payment" And Data_Payment_Method <> "") Then
+                            ExcelSheet.Sheets(1).Cells((Excel_Row), 7).Value = "Paid no match fees"
+                        End If
+                    End If
+                Else
+                    'Null not paid
+                    'Set default value
+                    ExcelSheet.Sheets(1).Cells((Excel_Row), 7).Value = " "
+                    If IsDBNull(Club_RS.Fields("LastSeasonAttended").Value) = True Then
+                        'New member this season
+                        If Data_Times_Attended >= 3 Then
+                            'Played 3 games - membership owed
+                            ExcelSheet.Sheets(1).Cells((Excel_Row), 7).Value = "Due !!"
+                        End If
+                    Else
+                        'Previous member
+                        If Data_Times_Attended > 1 Then
+                            'Played more than 1 game played & were a previous member
+                            ExcelSheet.Sheets(1).Cells((Excel_Row), 7).Value = "Due !!"
+                        End If
+                    End If
+                End If
+
+                If Data_Senior_Match_Fees_Paid = Data_Senior_Match_Fees_Due Then
+                    'Match fees up todate
+                    ExcelSheet.Sheets(1).Cells((Excel_Row), 6).Value = Data_Comment
+                Else
+                    If Data_Senior_Match_Fees_Paid > Data_Senior_Match_Fees_Due Then
+                        'Debug.Print "Match Fee Bal : " & Format((Data_Senior_Match_Fees_Paid - Data_Senior_Match_Fees_Due), "Currency") & " ( in Credit ) "
+                        ExcelSheet.Sheets(1).Cells((Excel_Row), 6).Value = "Match Fee Bal : " & Format((Data_Senior_Match_Fees_Paid - Data_Senior_Match_Fees_Due), "Currency") & " (Credit) " & Data_Comment
+                    Else
+                        ExcelSheet.Sheets(1).Cells((Excel_Row), 6).Value = "Match Fee Bal : " & Format((Data_Senior_Match_Fees_Paid - Data_Senior_Match_Fees_Due), "Currency") & " (Debt) " & Data_Comment
+                        Total_Senior_Match_Fees_Outstanding_int = Total_Senior_Match_Fees_Outstanding_int + Data_Senior_Match_Fees_Paid - Data_Senior_Match_Fees_Due
+                    End If
+                End If
+                Excel_Row = Excel_Row + 1
+            End If
+
+            If Club_RS.Fields("Email1Error").Value = True Or Club_RS.Fields("Email2Error").Value = True Or IsDBNull(Data_Subscription_Date) = True Then
+                If Club_RS.Fields("Email1Error").Value = True Then
+                    DetailsNeedAttn = DetailsNeedAttn & "1st Email address is rejecting - please confirm the above email address.<br>"
+                End If
+                If Club_RS.Fields("Email2Error").Value = True Then
+                    DetailsNeedAttn = DetailsNeedAttn & "2nd Email address is rejecting - please confirm the above email address.<br>"
+                End If
+
+                If IsDBNull(Data_Subscription_Date) = True Then
+                    'Temp member - check if membership fee is due
+                    If IsDBNull(Club_RS.Fields("LastSeasonAttended").Value) = True Then
+                        'Not a previous member - new member this year
+                        If Club_RS.Fields("Times Attended").Value > 2 Then
+                            DetailsNeedAttn = DetailsNeedAttn & "The above person is a New Member and has now completed their 3 Trial Sessions, their Membership Fee is now Due. Attended " & Trim(Str(Club_RS.Fields("Times Attended").Value)) & " times.<br>"
+                        End If
+                    Else
+                        'Previous member
+                        If Club_RS.Fields("Times Attended").Value > 1 Then
+                            DetailsNeedAttn = DetailsNeedAttn & "The above person is a Previous Member and their Membership Fee is now Due. Attended " & Trim(Str(Club_RS.Fields("Times Attended").Value)) & " times.<br>"
+                        End If
+                    End If
+                End If
+            End If
+
+            If Age_Group = "Seniors" Then
+                If Data_Home_Phone <> "" And Data_Emergency_Contact_Phone <> "" Then
+                    PrintLine(RegFile, "<td width=32% valign=top><font size=-2>" & Data_Home_Phone & " <b>Emerg</b> " & Data_Emergency_Contact_Phone & "</font></td>")
+                Else
+                    If Len(Data_Emergency_Contact_Phone) > 10 Then
+                        PrintLine(RegFile, "<td width=32%><font size=-2>" & "<b>Emerg</b> " & Data_Emergency_Contact_Phone & "&nbsp;" & "</font></td>")
+                    Else
+                        PrintLine(RegFile, "<td width=32% valign=top><font size=-2>" & Data_Home_Phone & "&nbsp;" & "</font></td>")
+                        DetailsNeedAttn = DetailsNeedAttn & "No Emergency Contact Name and Number.<br>"
+                    End If
+                End If
+            Else
+                If Data_Home_Phone <> "" And Data_Emergency_Contact_Phone <> "" Then
+                    PrintLine(RegFile, "<td width=32% valign=top><font size=-2>" & Data_Home_Phone & " / " & Data_Emergency_Contact_Phone & Data_Parents_Names & "</font></td>")
+                Else
+                    PrintLine(RegFile, "<td width=32% valign=top><font size=-2>" & Data_Home_Phone & Data_Emergency_Contact_Phone & "&nbsp;" & Data_Parents_Names & "</font></td>")
+                End If
+            End If
+
+            If Data_EMail <> "" And Data_2nd_EMail <> "" Then
+                PrintLine(RegFile, "<td width=22% valign=top><font size=-2>" & Data_EMail & "<br>" & Data_2nd_EMail & "</font></td>")
+            Else
+                PrintLine(RegFile, "<td width=22% valign=top><font size=-2>" & Data_EMail & "&nbsp;" & "</font></td>")
+            End If
+            PrintLine(RegFile, "<td valign=top><font size=-2>" & Data_RFU_Number & "</font></td>")
+            PrintLine(RegFile, "<td width=15% valign=top><font size=-2>" & Data_Medical_Condition & "</font></td>")
+
+            'Amended 16th July to prevent duplicate email addresses appearing in the email list.
+            If Data_EMail <> "" Then
+                For AgeGroup_Email_Addresses_Cnt = 0 To 999
+                    If AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = Data_EMail Then
+                        'Email address already record, do not add to list again
+                        Exit For
+                    Else
+                        If AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = "" Then
+                            'All the populated array elements have been searched, therefore this email address can't exist in the array so print it on the list.
+                            AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = Data_EMail
+                            PrintLine(EmailFile, Data_EMail & ";")
+                            Exit For
+                        End If
+                    End If
+                Next
+            End If
+            If Data_2nd_EMail <> "" Then
+                For AgeGroup_Email_Addresses_Cnt = 0 To 999
+                    If AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = Data_2nd_EMail Then
+                        'Email address already record, do not add to list again
+                        Exit For
+                    Else
+                        If AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = "" Then
+                            'All the populated array elements have been searched, therefore this email address can't exist in the array so print it on the list.
+                            AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = Data_2nd_EMail
+                            PrintLine(EmailFile, Data_2nd_EMail & ";")
+                            Exit For
+                        End If
+                    End If
+                Next
+            End If
+
+            PrintLine(RegFile, "</tr>")
+            If DetailsNeedAttn > "" Then
+                PrintLine(RegFile, "<tr>")
+                'Seniors dont have the attend field so needs to span 1 less columns
+                If Age_Group <> "Seniors" Then
+                    PrintLine(RegFile, "<td colspan=8 valign=top><font size=-2>Action needed for above player : <b>" & DetailsNeedAttn & "</font></b></td>")
+                Else
+                    PrintLine(RegFile, "<td colspan=7 valign=top><font size=-2>Action needed for above player : <b>" & DetailsNeedAttn & "</font></b></td>")
+                End If
+                PrintLine(RegFile, "</tr>")
+            End If
+
+            Club_RS.MoveNext()
+        Loop
+
+NoRecs:
+        Club_RS.Close()
+
+        PrintLine(RegFile, "</table>")
+        PrintLine(RegFile, "<table width=100%>")
+        PrintLine(RegFile, "<tr>")
+        PrintLine(RegFile, "<td width=25%><b><font size=-1>Number of Players</b></font></td>")
+        PrintLine(RegFile, "<td width=8% align=left><b><font size=-1>" & Str(Players_Cnt) & "</b></font></td>")
+        PrintLine(RegFile, "<td width=25%><b><font size=-1>Forms Completed</b></font></td>")
+        PrintLine(RegFile, "<td width=8% align=left><b><font size=-1>" & Str(Players_Form_Cnt) & "</b></font></td>")
+        PrintLine(RegFile, "<td width=25%><b><font size=-1>Full Members (Paid)</b></font></td>")
+        PrintLine(RegFile, "<td width=8% align=left><b><font size=-1>" & Str(Players_Paid_Cnt) & "</b></font></td>")
+        PrintLine(RegFile, "</tr>")
+
+        PrintLine(RegFile, "<tr>")
+        PrintLine(RegFile, "<td width=25% >&nbsp;</td>")
+        PrintLine(RegFile, "<td width=8% >&nbsp;</td>")
+        PrintLine(RegFile, "<td width=25%><b><font size=-1>Forms Required</b></font></td>")
+        PrintLine(RegFile, "<td width=8% align=left><b><font size=-1>" & Str(Players_Cnt - Players_Form_Cnt) & "</b></font></td>")
+        PrintLine(RegFile, "<td width=25%><b><font size=-1>Temporary Members</b></font></td>")
+        PrintLine(RegFile, "<td width=8% align=left><b><font size=-1>" & Str(Players_Cnt - Players_Paid_Cnt) & "</b></font></td>")
+        PrintLine(RegFile, "</b></tr>")
+        PrintLine(RegFile, "</table><br>")
+
+        ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+        ' Now look for email addresses of people who help with the Age Group ( coach etc ) to ensure that their email address
+        ' is included in the email file.
+        ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+        Dim Email_Address_Array_str(2) As String
+
+        Club_RS.let_Source("SELECT * from [Q_Query Qualifications] Where " & Passed_SQL)
+        Club_RS.Open()
+        If Club_RS.BOF Then
+            'No results returned
+        Else
+            Club_RS.MoveFirst()
+            Do While Not Club_RS.EOF
+                Email_Address_Array_str(1) = Club_RS.Fields("Email").Value.ToString.ToLower.Trim
+                Email_Address_Array_str(2) = Club_RS.Fields("2nd E-mail").Value.ToString.ToLower.Trim
+
+                For Lp As Integer = 1 To 2
+                    For AgeGroup_Email_Addresses_Cnt = 0 To 999
+                        If Email_Address_Array_str(Lp) <> "" Then
+                            If Trim(AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt).ToLower) = Email_Address_Array_str(Lp) Then
+                                'Email address already record, do not add to list again
+                                Exit For
+                            Else
+                                If AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = "" Then
+                                    'All the populated array elements have been searched, therefore this email address can't exist in the array so print it on the list.
+                                    AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = Email_Address_Array_str(Lp)
+                                    PrintLine(EmailFile, Email_Address_Array_str(Lp) & ";")
+                                    Exit For
+                                End If
+                            End If
+                        End If
+                    Next
+                Next
+
+                Club_RS.MoveNext()
+            Loop
+        End If
+
+        Club_RS.Close()
+        FileClose(EmailFile)
+
+        If Age_Group = "Seniors" Then
+
+            'Close Spreadsheet
+            Excel_Row = Excel_Row + 1
+
+            If Total_Senior_Match_Fees_Outstanding_int > 0 Then
+                'In Credit
+                ExcelSheet.Sheets(1).Cells(Excel_Row, 6).Value = "Senior Overall Match Fees : " & Format((Total_Senior_Match_Fees_Outstanding_int), "Currency") & " (Credit) "
+            Else
+
+                Dim style As Microsoft.Office.Interop.Excel.Style = ExcelSheet.Application.ActiveWorkbook.Styles.Add("Highlight")
+                style.Font.Bold = True
+                style.Interior.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.Red)
+
+
+                ExcelSheet.Sheets(1).Cells(Excel_Row, 6).Style = "Highlight"
+                ExcelSheet.Sheets(1).Cells(Excel_Row, 6).Value = "Senior Overall Match Fees : " & Format((Total_Senior_Match_Fees_Outstanding_int), "Currency") & " (Debt) "
+            End If
+
+            ExcelSheet.Application.DisplayAlerts = False
+            ExcelSheet.SaveAs(Attachment3)
+            ExcelSheet.Application.DisplayAlerts = True
+            ExcelSheet.Application.Quit()
+
+            'Extract Supporters email addresses
+            Attachment4 = Database_Temp_Directory & "Emails_Senior_Supporters.txt"
+            EmailFile = FreeFile()
+            FileOpen(EmailFile, Attachment4, OpenMode.Output, OpenAccess.Write)
+
+            'Clear array
+            For AgeGroup_Email_Addresses_Cnt = 0 To 999
+                AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = ""
+            Next
+
+            Club_RS.let_Source("SELECT Email, [2nd E-mail], Email1SeniorNewsletter, Email2SeniorNewsletter From Contacts WHERE (Contacts.Email1SeniorNewsletter = Yes or Contacts.Email2SeniorNewsletter = Yes) AND (Contacts.Membership_Type <=10) ")
+            Club_RS.Open()
+            If Club_RS.BOF Then
+                'No results returned
+            Else
+                Club_RS.MoveFirst()
+                Do While Not Club_RS.EOF
+                    Data_EMail = Club_RS.Fields("Email").Value.ToString.Trim.ToLower
+                    Data_2nd_EMail = Club_RS.Fields("2nd E-mail").Value.ToString.Trim.ToLower
+
+                    If Data_EMail <> "" And Club_RS.Fields("Email1SeniorNewsletter").Value = True Then
+                        'Email address is not blank and senior newsletter is wanted.
+                        For AgeGroup_Email_Addresses_Cnt = 0 To 999
+                            If AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = Data_EMail Then
+                                'Email address already record, do not add to list again
+                                Exit For
+                            Else
+                                If AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = "" Then
+                                    'All the populated array elements have been searched, therefore this email address can't exist in the array so print it on the list.
+                                    AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = Data_EMail
+                                    PrintLine(EmailFile, Data_EMail & ";")
+                                    Exit For
+                                End If
+                            End If
+                        Next
+                    End If
+
+                    If Data_2nd_EMail <> "" And Club_RS.Fields("Email2SeniorNewsletter").Value = True Then
+                        'Email address is not blank and senior newsletter is wanted.
+                        For AgeGroup_Email_Addresses_Cnt = 0 To 999
+                            If AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = Data_2nd_EMail Then
+                                'Email address already record, do not add to list again
+                                Exit For
+                            Else
+                                If AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = "" Then
+                                    'All the populated array elements have been searched, therefore this email address can't exist in the array so print it on the list.
+                                    AgeGroup_Email_Addresses(AgeGroup_Email_Addresses_Cnt) = Data_2nd_EMail
+                                    PrintLine(EmailFile, Data_2nd_EMail & ";")
+                                    Exit For
+                                End If
+                            End If
+                        Next
+                    End If
+
+                    Club_RS.MoveNext()
+                Loop
+            End If
+
+            Club_RS.Close()
+            Club_Conn.Close()
+            FileClose(EmailFile)
+        End If
+
+        Club_RS = Nothing
+        Club_Conn = Nothing
+
+        If Age_Group <> "Seniors" Then
+
+
+            PrintLine(RegFile, "<b><u>Club House Duty Rota</u><font size=-1></b><br>")
+
+            '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+            ' Duty Rota
+            '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+            'Dim Duty_Rota_Header_Printed As Boolean
+            'Duty_Rota_Header_Printed = False
+
+            If InStr(DutyRota_Week1, " Age Group : ") > 0 Then
+                'Age Group found for this week.
+
+                If InStr(DutyRota_Week1, Age_Group_Shortened) > 0 Or InStr(DutyRota_Week1, "ALL") > 0 Or ((Age_Group_Shortened = "MICROS" Or Age_Group_Shortened = "U6" Or Age_Group_Shortened = "U7" Or Age_Group_Shortened = "U8" Or Age_Group_Shortened = "U9" Or Age_Group_Shortened = "U10" Or Age_Group_Shortened = "U11" Or Age_Group_Shortened = "U12") And InStr(DutyRota_Week1, "ALL MINIS") > 0) Then
+                    PrintLine(RegFile, "<b><u>" & DutyRota_Week1 & "</u></b> - Your Age Group is on Duty.<br>")
+                    DutyRota_Week1_Txt = DutyRota_Week1 & " - Your Age Group is on Duty."
+
+                    Call Register_Prepare_Duty_Rota(DutyRota_Week1, Age_Group, SQL, EmailTo, EmailCC, SendEmail)
+                Else
+                    PrintLine(RegFile, DutyRota_Week1 & "<br>")
+                    DutyRota_Week1_Txt = DutyRota_Week1
+                End If
+            End If
+
+            If InStr(DutyRota_Week2, " Age Group : ") > 0 Then
+                'Age Group found for this week.
+                If (InStr(DutyRota_Week2, Age_Group_Shortened) > 0 Or InStr(DutyRota_Week2, "ALL") > 0) Or ((Age_Group_Shortened = "MICROS" Or Age_Group_Shortened = "U6" Or Age_Group_Shortened = "U7" Or Age_Group_Shortened = "U8" Or Age_Group_Shortened = "U9" Or Age_Group_Shortened = "U10" Or Age_Group_Shortened = "U11" Or Age_Group_Shortened = "U12") And InStr(DutyRota_Week2, "ALL MINIS") > 0) Then
+                    PrintLine(RegFile, "<b><u>" & DutyRota_Week2 & "</u></b> - Your Age Group is on Duty.<br>")
+                    DutyRota_Week2_Txt = DutyRota_Week2 & " - Your Age Group is on Duty."
+
+                    Call Register_Prepare_Duty_Rota(DutyRota_Week2, Age_Group, SQL, EmailTo, EmailCC, SendEmail)
+                Else
+                    PrintLine(RegFile, DutyRota_Week2 & "<br>")
+                    DutyRota_Week2_Txt = DutyRota_Week2
+                End If
+            End If
+
+            If InStr(DutyRota_Week3, " Age Group : ") > 0 Then
+                'Age Group found for this week.
+                If InStr(DutyRota_Week3, Age_Group_Shortened) > 0 Or InStr(DutyRota_Week3, "ALL") > 0 Or ((Age_Group_Shortened = "MICROS" Or Age_Group_Shortened = "U6" Or Age_Group_Shortened = "U7" Or Age_Group_Shortened = "U8" Or Age_Group_Shortened = "U9" Or Age_Group_Shortened = "U10" Or Age_Group_Shortened = "U11" Or Age_Group_Shortened = "U12") And InStr(DutyRota_Week3, "ALL MINIS") > 0) Then
+                    PrintLine(RegFile, "<b><u>" & DutyRota_Week3 & "</u></b> - Your Age Group is on Duty.<br>")
+                    DutyRota_Week3_Txt = DutyRota_Week3 & " - Your Age Group is on Duty."
+
+                    Call Register_Prepare_Duty_Rota(DutyRota_Week3, Age_Group, SQL, EmailTo, EmailCC, SendEmail)
+
+                Else
+                    PrintLine(RegFile, DutyRota_Week3 & "<br>")
+                    DutyRota_Week3_Txt = DutyRota_Week3
+                End If
+            End If
+
+            PrintLine(RegFile, "<br></font size>")
+
+            If AgeGroup_Fixtures(0) <> "" Then
+                PrintLine(RegFile, "<b><u>Age Group look ahead</u></b><font size=-1><br>")
+
+                For AgeGroup_Fixtures_Cnt = 0 To 15
+                    If AgeGroup_Fixtures(AgeGroup_Fixtures_Cnt) <> "" Then
+                        PrintLine(RegFile, AgeGroup_Fixtures(AgeGroup_Fixtures_Cnt) & "<br>")
+                    End If
+                Next
+                PrintLine(RegFile, "</font><br>")
+            End If
+        End If
+
+        PrintLine(RegFile, "<b>*** All Data is in the Strictest Confidence ***</b><font size=-1>")
+        PrintLine(RegFile, "<br>Anyone attending who isn't shown as having Completed a Registration Form must do so before they train or play.")
+        'Print (RegFile, "<br>If a player who has not paid their membership fee is no longer attending please indicate this on the register so that we do not chase them for their membership."
+        'Print (RegFile, "<br>Any Highlighted details need attention. Please mark any updated details on the register so that the clubs records can be corrected."
+        If Age_Group = "Seniors" Then
+            ' Print (RegFile, "<br><br>Please put the Completed Register in the Folder in the Kitchen - Many Thanks"
+            PrintLine(RegFile, "<br>If a player who has not paid their membership fee is no longer attending please advise our <b>membership sec *</b> so that we do not chase them for their membership.")
+            PrintLine(RegFile, "<br><b>Any highlighted details need attention.</b> Please advise our <b>membership sec *</b>of any missing information so that the details on the register can be updated.")
+            PrintLine(RegFile, "<br><b>*</b> Membership Sec : email membership@grfc.co.uk")
+        Else
+            PrintLine(RegFile, "<br>If a player who has not paid their membership fee is no longer attending please indicate this on the register so that we do not chase them for their membership.")
+            PrintLine(RegFile, "<br>Any highlighted details need attention. Please mark any updated details on the register so that the clubs records can be corrected.")
+            PrintLine(RegFile, "<br><br>Please put the Completed Register (and any membership forms / payments etc) in the post box behind the door in kit room at the end of the coaching session or email me relevant info - Many Thanks")
+        End If
+        PrintLine(RegFile, "</font>")
+        PrintLine(RegFile, "</body>")
+        PrintLine(RegFile, "</html>")
+        FileClose(RegFile)
+
+        If SendEmail = True Then
+            Call Registers_Email(EmailTo, EmailCC, Age_Group, DutyRota_Week1_Txt, DutyRota_Week2_Txt, DutyRota_Week3_Txt, AgeGroup_Fixtures, Session_Date_dtm.ToLongDateString, Attachment1, Attachment2, Attachment3, Attachment4, Attachment5)
+        Else
+            'Do not send emails
+        End If
+    End Sub
+
+
+    Private Sub Registers_Email(ByVal EmailTo As String, ByVal EmailCC As String, ByVal Age_Group As String, ByVal DutyRota_Week1_Txt As String, ByVal DutyRota_Week2_Txt As String, ByVal DutyRota_Week3_Txt As String, ByVal AgeGroup_Fixtures() As String, ByVal Passed_Date_Of_Session_Display As String, ByVal Passed_Attachment1 As String, ByVal Passed_Attachment2 As String, ByVal Passed_Attachment3 As String, ByVal Passed_Attachment4 As String, ByVal Passed_Attachment5 As String)
+
+        Me.Label_Progress.Text = "Creating Register Email for : " & Age_Group
+
+        Dim Email_Recipient_To As String = EmailTo
+        Dim Email_Recipient_CC As String = EmailCC
+        Dim Email_Recipient_BCC As String = ""
+        Dim Email_Importance As String = ""
+        Dim Email_Subject As String = ""
+        Dim Email_Body As String = ""
+        Dim Email_Attachment1 As String = Passed_Attachment1 ' Register
+        Dim Email_Attachment2 As String = Passed_Attachment2 ' Players emails addresses
+        Dim Email_Attachment3 As String = Passed_Attachment3 ' Match Fee sheet
+        Dim Email_Attachment4 As String = Passed_Attachment4 ' Supporter email addresses ( seniors )
+        Dim Email_Attachment5 As String = Passed_Attachment5
+        Dim Email_Send_As_HTML_bln As Boolean = False
+
+        Dim Lcl_Additional_text As String = "Please also find attached a list of email addresses for your Age Group, the list can be copied and pasted in to your Email tool to save you having to maintain your own list." & _
+           " Whenever an email address is updated on the club records or a new member joins it will automatically be added to the list." & vbCrLf & vbCrLf
+
+        Dim Lcl_Signature As String = vbCrLf & vbCrLf & "Many thanks" & vbCrLf & _
+               "Tracy Davies" & vbCrLf & "Membership Secretary" & vbCrLf & vbCrLf & _
+               " ** Data is in Strictest Confidence **" & vbCrLf & vbCrLf
+
+        If Age_Group = "Seniors" Then
+            'Seniors
+            Email_Subject = "Guildfordians RFC Register - Age Group : " & Age_Group & " - Match Day : " & Passed_Date_Of_Session_Display
+            Email_Body = "Please find attached the Register for your Age Groups next session." & vbCrLf & vbCrLf & _
+               "Please email me the names of any new players, players who longer attends or any amended details." & vbCrLf & vbCrLf & Lcl_Additional_text
+
+            Email_Body = Email_Body & "Supporters email addresses are also attached."
+        Else
+            'Juniors
+            Email_Subject = "Guildfordians RFC Register - Age Group : " & Age_Group & " - Coaching Session : " & Passed_Date_Of_Session_Display
+            Email_Body = "Please find attached the Register for your Age Groups next session." & vbCrLf & vbCrLf & _
+                "Please write the names of any new players on the Register." & vbCrLf & _
+                "If any players no longer attends or their details need updating please note this on the Register." & vbCrLf & vbCrLf & Lcl_Additional_text
+
+            Email_Body = Email_Body & "Please place the completed Register (and any membership forms / payments etc) in the post box behind the door in kit room at the end of the coaching session or email me relevant info." & vbCrLf & vbCrLf
+
+            Email_Body = Email_Body & "Club House Duty Rota " & vbCrLf
+            If DutyRota_Week1_Txt <> "" Then
+                Email_Body = Email_Body & DutyRota_Week1_Txt & vbCrLf
+            End If
+            If DutyRota_Week2_Txt <> "" Then
+                Email_Body = Email_Body & DutyRota_Week2_Txt & vbCrLf
+            End If
+            If DutyRota_Week3_Txt <> "" Then
+                Email_Body = Email_Body & DutyRota_Week3_Txt & vbCrLf
+            End If
+
+            'Add Fixtures to email.
+            If AgeGroup_Fixtures(0) <> "" Then
+                Email_Body = Email_Body & vbCrLf & "Age Group look ahead" & vbCrLf
+
+                For AgeGroup_Fixtures_Cnt = 0 To 15
+                    If AgeGroup_Fixtures(AgeGroup_Fixtures_Cnt) <> "" Then
+                        Email_Body = Email_Body & AgeGroup_Fixtures(AgeGroup_Fixtures_Cnt) & vbCrLf
+                    End If
+                Next
+                Email_Body = Email_Body
+            End If
+        End If
+
+        Email_Body = Email_Body & Lcl_Signature
+
+        'Attache email list & register
+        Email_Attachment1 = (Database_Temp_Directory & "Register_" & Age_Group & ".html")
+        Email_Attachment2 = (Database_Temp_Directory & "Emails_" & Age_Group & ".txt")
+
+        If Age_Group = "Seniors" Then
+
+            'Attach match fees spreadsheet
+            Email_Attachment3 = (Passed_Attachment3)
+
+            'Attach Supports email addesses
+            Email_Attachment4 = (Passed_Attachment4)
+
+            If Utility_Send_Email(Email_Recipient_To, Email_Recipient_CC, Email_Recipient_BCC, Email_Importance, Email_Subject, Email_Body, Email_Attachment1, Email_Attachment2, Email_Attachment3, Email_Attachment4, Email_Attachment5, Email_Send_As_HTML_bln) = True Then
+
+            End If
+        Else
+            'Juniors
+            Email_Body = Email_Body & "Instructions on how to complete the register electronically " & vbCrLf & _
+                "Open the .html attachment containing the register." & vbCrLf & _
+                "Highlight the register and copy all of the entries." & vbCrLf & _
+                "Open a new MS Word document ( other document types may ) " & vbCrLf & _
+                "Paste the register into the Word document." & vbCrLf & _
+                "Tick the boxes to show who attended." & vbCrLf & _
+                "Save the document and Email it to this email address."
+        End If
+
+        'Send Email
+        If Utility_Send_Email(Email_Recipient_To, Email_Recipient_CC, Email_Recipient_BCC, Email_Importance, Email_Subject, Email_Body, Email_Attachment1, Email_Attachment2, Email_Attachment3, Email_Attachment4, Email_Attachment5, Email_Send_As_HTML_bln) = True Then
+
+        End If
+
+        If Age_Group = "Seniors" Then
+            Email_Recipient_To = "seniorrugby@grfc.co.uk"
+            Email_Recipient_CC = ""
+            Email_Recipient_BCC = ""
+            Email_Importance = ""
+            Email_Subject = "Guildfordians RFC Email List - Age Group : " & Age_Group & " - Match Day : " & Passed_Date_Of_Session_Display
+            Email_Body = "Attached is your players and supporters email address lists for our email account (seniorrugby@grfc.co.uk)." & Lcl_Signature
+            Email_Attachment1 = Passed_Attachment2
+            Email_Attachment2 = Passed_Attachment4
+            Email_Attachment3 = ""
+            Email_Attachment4 = ""
+            Email_Attachment5 = ""
+            Email_Send_As_HTML_bln = False
+
+            'Send Email
+            If Utility_Send_Email(Email_Recipient_To, Email_Recipient_CC, Email_Recipient_BCC, Email_Importance, Email_Subject, Email_Body, Email_Attachment1, Email_Attachment2, Email_Attachment3, Email_Attachment4, Email_Attachment5, Email_Send_As_HTML_bln) = True Then
+
+            End If
+        End If
+
+    End Sub
+
+
+    Public Sub Registers_Prepare(ByVal SendEmail As Boolean, ByVal RegisterToCreate As String)
+
+        Me.Label_Progress.Text = "Preparing Registers"
+
+        Call Create_Membership_Breakdown() 'Create membership stats
+
+        'Parameters
+        'SendEmail - True sends the email, false just creates the files on the PC.
+        'RegisterToCreate - A - All, S - Seniors Only, J - Juniors Only
+
+        RegisterToCreate = RegisterToCreate.Trim.ToUpper
+
+        Database_Directory = "D:\RugbyClub\"
+        Database_Temp_Directory = Database_Directory & "Temp\"
+        Database_Template_Directory = Database_Directory & "Template\"
+        Database_Checkpoint_Directory = Database_Directory & "Checkpoint\"
+
+        Dim DutyRota_Week1 = ""
+        Dim DutyRota_Week2 = ""
+        Dim DutyRota_Week3 = ""
+
+
+        'False - dont send email
+        'True - send email
+        'SendEmail = True
+
+
+        'GoTo Restart:
+        'Send Outstanding Membership confirmations
+        'Send Membership Breakdown
+        'Send Coaching Qualifications
+        'Send Medical Conditions
+        'Send Referees
+        'Send Registers
+
+
+        'Call Bulk_Email_Membership_Conf.Email_Membership_Conf
+
+
+        'If Day(Now()) <= 7 Or (Day(Now()) >= 15 And Day(Now()) <= 22) Then
+        'Call [Module - Membership Breakdown].Membership_Breakdown
+
+        '    Call [Coaching Qualification].Qualifications
+
+        '    DoCmd.RunMacro "Macro - Medical Conditions"
+
+        '   DoCmd.RunMacro "Macro - Email Referees Details"
+
+
+        'DoCmd.RunMacro "Macro - Age Group Coaches"
+        'End If
+Restart:
+        'End
+
+        Close() ' Close all files
+
+        'If an Age Group has an admin manager the email is sent to the admin manger and .cc'd to the coach.
+        'If the Age Group doesnt have an admin manager the admin email address is forwarded to the coach.
+
+        'Parameters.
+        '1 Display Name for Age Group - characters must be valid for file names
+        '2 SQL parameters for search.
+        '3 To email address.
+        '4 .CC email address.
+
+        If RegisterToCreate = "S" Then
+            Call Registers_Create("Seniors", "AGE_Group = 'Senior'", "senior.captains@grfc.co.uk", "senior.chairman@grfc.co.uk", "", "", "", SendEmail)
+        Else
+            'Not just the seniors registers are needed
+            Call Registers_Read_Duty_Rota(DutyRota_Week1, DutyRota_Week2, DutyRota_Week3)
+
+            Call Registers_Create("Micros", "AGE_Group = 'Micros'", "micros.admin@grfc.co.uk", "micros.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            Call Registers_Create("U6s", "AGE_Group = 'U6'", "U6.admin@grfc.co.uk", "U6.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            Call Registers_Create("U7s", "AGE_Group = 'U7'", "U7.admin@grfc.co.uk", "U7.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            Call Registers_Create("U8s", "AGE_Group = 'U8'", "U8.admin@grfc.co.uk", "U8.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            Call Registers_Create("U9s", "AGE_Group = 'U9'", "U9.admin@grfc.co.uk", "U9.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            Call Registers_Create("U10s", "AGE_Group = 'U10'", "U10.admin@grfc.co.uk", "U10.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            Call Registers_Create("U11s", "AGE_Group = 'U11'", "U11.admin@grfc.co.uk", "U11.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            Call Registers_Create("U12s", "AGE_Group = 'U12'", "U12.admin@grfc.co.uk", "U12.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            Call Registers_Create("U13s", "AGE_Group = 'U13'", "U13.admin@grfc.co.uk", "U13.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            Call Registers_Create("U14s", "AGE_Group = 'U14'", "U14.admin@grfc.co.uk", "U14.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            Call Registers_Create("U15s", "AGE_Group = 'U15'", "U15.admin@grfc.co.uk", "U15.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            Call Registers_Create("U16s", "AGE_Group = 'U16'", "U16.admin@grfc.co.uk", "U16.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            Call Registers_Create("U17s", "AGE_Group = 'U17'", "U17.admin@grfc.co.uk", "U17.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            'Call Registers_Create("Colts", "AGE_Group = 'Colts'", "colts.admin@grfc.co.uk", "colts.coach@grfc.co.uk", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+            Call Registers_Create("Girls U15s and U18s", "AGE_Group = 'U15Girls' or AGE_Group = 'U18Girls'", "girls.coach@grfc.co.uk", "", DutyRota_Week1, DutyRota_Week2, DutyRota_Week3, SendEmail)
+
+            If RegisterToCreate = "A" Then
+                'Also send the seniors registers
+                Call Registers_Create("Seniors", "AGE_Group = 'Senior'", "senior.captains@grfc.co.uk", "senior.chairman@grfc.co.uk", "", "", "", SendEmail)
+            End If
+        End If
+
+        If SendEmail = True Then
+            MsgBox("The sending out of Register(s) has been completed.")
+        Else
+            MsgBox("The Register(s) have been created but not sent out, they are located in : " & Database_Temp_Directory)
+        End If
+
+        Me.Label_Progress.Text = "Completed Registers"
+    End Sub
+
+
+    Sub XXX_Registers_Read_Age_Group_Fixtures(ByRef AgeGroup_Fixtures() As Object, ByVal Age_Group As String)
+
+        '        'No longer used
+        '        Me.Label_Progress.Text = "Reading Fixtures for : " & Age_Group
+
+        '        Dim Next_Sundays_Date_dtm As Date
+        '        Dim Fixture_Date_dtm As Date
+
+        '        Dim AgeGroup_Fixtures_Cnt As Integer = 0
+        '        Dim Age_Group_Test = ""
+
+        '        Dim Date1 As String = ""
+        '        Dim Date2 As String = ""
+        '        Dim Date3 As String = ""
+
+        '        'Next Sundays Date
+        '        Next_Sundays_Date_dtm = DateAdd("d", (7 - (Weekday(Now()))) + 1, Now())
+
+        '        Date1 = Format(Next_Sundays_Date_dtm, "dd-MMM-yyyy")
+        '        Fixture_Date_dtm = DateAdd("d", 7, Next_Sundays_Date_dtm)
+        '        Date2 = Format(Fixture_Date_dtm, "dd-MMM-yyyy")
+
+        '        Fixture_Date_dtm = DateAdd("d", 56, Next_Sundays_Date_dtm)
+        '        Date3 = Format(Fixture_Date_dtm, "dd-MMM-yyyy")
+
+        '        'Date1 = "#" & Date1 & "#"
+        '        'Date2 = "#" & Date1 & "#"
+        '        'Date3 = "#" & Date3 & "#"
+
+        '        '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+        '        'Read the Fixtures for the next 3 Sundays.
+        '        '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+        '        Age_Group_Test = Age_Group.Trim.ToUpper
+        '        If VB.Left(Age_Group_Test, 5) = "GIRLS" Then
+        '            Age_Group_Test = "GIRLS"
+        '        End If
+
+        '        Select Case Age_Group_Test
+        '            'Case "GIRLS" : Exit Sub
+        '            Case "MICROS", "MICRO" : Exit Sub
+        '            Case "U6S", "U6" : Exit Sub
+        '            Case "U7S", "U8S", "U9S", "U10S", "U11S", "U12S", "U7", "U8", "U9", "U10", "U11", "U12"
+        '                Age_Group_Test = "MINIS"
+        '                Exit Sub
+        '            Case Else
+        '                If VB.Right(Age_Group_Test, 1) = "S" Then
+        '                    Age_Group_Test = VB.Left(Age_Group_Test, Len(Age_Group_Test) - 1)
+        '                End If
+        '        End Select
+
+
+        '        Dim fixtureXml As String = InvokeWSForFixtureXml("U13")
+        '        Dim domDoc As XmlDocument = New XmlDocument
+        '        domDoc.LoadXml(fixtureXml)
+
+        '        Dim fixtureHA As String = ""
+        '        Dim fixtureDetail As String
+        '        Dim fixtureDate As String
+        '        Dim fixtureDate_dtm As Date
+        '        Dim fixtureItem As XmlElement
+
+        '        For Each fixtureItem In domDoc.DocumentElement.GetElementsByTagName("DiaryFixture")
+        '            fixtureDetail = fixtureItem.GetElementsByTagName("FixtureDetail").Item(0).ToString
+        '            fixtureDate_dtm = VB.Left(fixtureItem.GetElementsByTagName("FixtureDate").Item(0).ToString, 10)
+        '            fixtureDate = Format(fixtureDate_dtm, "dd-MMM-yyyy")
+        '            If fixtureDetail <> "" Then
+        '                If Trim(fixtureDetail) <> "" Then
+        '                    'Fixture Found, load into array
+
+        '                    If Date1 = fixtureDate Or Date2 = fixtureDate Or Date3 = fixtureDate Then
+        '                        If AgeGroup_Fixtures_Cnt < 15 Then
+        '                            AgeGroup_Fixtures(AgeGroup_Fixtures_Cnt) = fixtureDate & " - " & fixtureDetail
+        '                            ' If UCase(Trim(fixtureDetail)) <> "HOLIDAY" Then
+        '                            If Trim(fixtureHA) = "H" Then
+        '                                AgeGroup_Fixtures(AgeGroup_Fixtures_Cnt) = AgeGroup_Fixtures(AgeGroup_Fixtures_Cnt) & " ( Home )"
+        '                            End If
+        '                            If Trim(fixtureHA) = "A" Then
+        '                                AgeGroup_Fixtures(AgeGroup_Fixtures_Cnt) = AgeGroup_Fixtures(AgeGroup_Fixtures_Cnt) & " ( Away )"
+        '                            End If
+        '                            'End If
+        '                            AgeGroup_Fixtures_Cnt = AgeGroup_Fixtures_Cnt + 1
+        '                        End If
+        '                    End If
+        '                End If
+        '            End If
+        '        Next
+        '        Exit Sub
+
+        'Err_Handler:
+        '        MsgBox("Error : " & Err.Number & vbCrLf & "Description : " & Err.Description, vbCritical)
+    End Sub
+
+
+    Sub Register_Prepare_Duty_Rota(ByVal DutyRota_Week_Details As String, ByVal Age_Group As String, ByVal SQL As String, ByVal EmailTo As String, ByVal EmailCC As String, ByVal SendEmail As Boolean)
+        'This routine is called if your are on the Duty Rota in the Next 3 weeks.
+        'SendEmail = False
+        If SendEmail = False Then
+            Exit Sub
+        End If
+
+        Me.Label_Progress.Text = "Preparing Duty Rota notification for : " & Age_Group
+
+
+        Dim Email_Recipient_To As String = EmailTo
+        Dim Email_Recipient_CC As String = EmailCC
+        Dim Email_Recipient_BCC As String = ""
+        Dim Email_Importance As String = "H"
+        Dim Email_Subject As String = "Duty Rota Notification - Guildfordians RFC - Age Group : " & Age_Group
+        Dim Email_Body As String = ""
+        Dim Email_Attachment1 As String = ""
+        Dim Email_Attachment2 As String = ""
+        Dim Email_Attachment3 As String = ""
+        Dim Email_Attachment4 As String = ""
+        Dim Email_Attachment5 As String = ""
+        Dim Email_Send_As_HTML_bln = False
+
+
+        'Add Caterig to the email
+        If Email_Recipient_CC <> "" Then
+            Email_Recipient_CC = Email_Recipient_CC & "; catering@grfc.co.uk"
+        Else
+            Email_Recipient_CC = "catering@grfc.co.uk"
+        End If
+
+        Dim Mess_body1 As String = ""
+
+        Mess_body1 = "Your Age Group is due to be on the Duty rota as detailed below." & vbCrLf & vbCrLf & _
+            "Club House Duty Rota " & vbCrLf & _
+            DutyRota_Week_Details & vbCrLf & vbCrLf & _
+            "This season the Duty rota has been split : " & vbCrLf & _
+            "The Minis (U7's to U12's) run the kitchen from 09:30 cooking & serving food until 13:00, at 13:00 the kitchen closes and tidying up in the kitchen and upstairs can begin. When the Mini's have visitors free food is provided for guests and our players." & vbCrLf & _
+            "The Youth Teams (U13's to U17's) are responsible for feeding their own visiting teams and tidying up the changing rooms, corridors, showers, entrance hall an ensuring that kit has been put away correctly." & vbCrLf & vbCrLf & _
+            "Our Catering manager has produced a document detailing what has to be done each week in the kitchen, this will normally be sent to each age group when it is their turn in the kitchen. Youth teams need to advise our Catering Manager of any food requirements for visitors in advance." & _
+            vbCrLf & vbCrLf & "If you are unable to do the rota on the this date please swap with another age group and notify our Webmaster to update the diary." & vbCrLf & vbCrLf & _
+            "Contact Details for the above can be found on : http://www.grfc.co.uk/contacts.asp " & vbCrLf & vbCrLf & _
+            "How to use the cooker and cooker hood - please read : http://www.grfc.co.uk/documents/cookerhood.doc "
+
+        Mess_body1 = Mess_body1 & vbCrLf & vbCrLf & "Many thanks" & vbCrLf & _
+        "Tracy Davies" & vbCrLf & "Membership Secretary" & vbCrLf & vbCrLf
+
+        Email_Body = Mess_body1
+
+        'Send Email
+        If Utility_Send_Email(Email_Recipient_To, Email_Recipient_CC, Email_Recipient_BCC, Email_Importance, Email_Subject, Email_Body, Email_Attachment1, Email_Attachment2, Email_Attachment3, Email_Attachment4, Email_Attachment5, Email_Send_As_HTML_bln) = True Then
+
+        End If
+
+    End Sub
+
+
+    Function InvokeWSForRotaXml()
+        Exit Function
+
+        'Declare our working variables
+        Dim sMsg As String = ""
+        Dim sEnv As String = ""
+        'Set and Instantiate our working objects
+        ' Dim ObjHTTP As System.Xml.XXMLHTTP = New MSXML2.XMLHTTP
+        Dim ObjHTTP As Xml.XmlTextReader = Nothing
+        ObjHTTP = New XmlTextReader("http://www.grfc.co.uk/api/rota?type=xml")
+
+        'we invoke the web service
+        'use this code snippet to invoke a web service which requires authentication
+        'ObjHTTP.Open "Post", sURL, False, "username", "password"
+        'We use this code snippet to invoke a web service that doesn't require any user authentication
+        'ObjHTTP.o("Get", sRotaURL, False)
+        'ObjHTTP.setRequestHeader("Content-Type", "text/xml")
+        'ObjHTTP.send(sEnv)
+        InvokeWSForRotaXml = ObjHTTP.ToString
+        'clean up code
+        ObjHTTP = Nothing
+    End Function
+
+
+    Function XXX_InvokeWSForFixtureXml(ageGroup As String) As String
+
+        XXX_InvokeWSForFixtureXml = ""
+
+        ageGroup = ageGroup.Trim
+
+        'Declare our working variables
+        'Dim sMsg As String = ""
+        Dim sEnv As String = ""
+        'Set and Instantiate our working objects
+        'Dim ObjHTTP1 As MSXML2.XMLHTTP = New MSXML2.XMLHTTP
+        'Dim ObjHTTP1 As New MSXML2.XMLHTTP
+        Dim ObjHTTP As XmlDocument = New XmlDocument
+        ObjHTTP.Load("http://www.grfc.co.uk/api/fixtures/" & ageGroup & "?type=xml")
+        'ObjHTTP.WhitespaceHandling = WhitespaceHandling.None
+        'ObjHTTP.Read()
+
+        'Dim sFixtureUrl As String = "http://www.grfc.co.uk/api/fixtures/" & ageGroup & "?type=xml"
+        'we invoke the web service
+        'use this code snippet to invoke a web service which requires authentication
+        'ObjHTTP.Open "Post", sURL, False, "username", "password"
+        'We use this code snippet to invoke a web service that doesn't require any user authentication
+        'ObjHTTP1.open("Get", sFixtureUrl, False)
+        'ObjHTTP1.setRequestHeader("Content-Type", "text/xml")
+        'ObjHTTP1.send(sEnv)
+        'Debug.Print(sFixtureUrl)
+        XXX_InvokeWSForFixtureXml = ObjHTTP.ToString
+
+        'Return ObjHTTP1.responseText.ToString
+        'clean up code
+        'ObjHTTP1 = Nothing
+        'End Using
+    End Function
+
+
+    Sub InvokeWSTest()
+        Dim xml As String = InvokeWSForRotaXml()
+        Dim domDoc As XmlDocument = New XmlDocument
+        domDoc.LoadXml(xml)
+        MsgBox(xml)
+    End Sub
+
+
+    Sub Registers_Read_Age_Group_Fixtures(ByRef Fixture_Array() As String, ByVal Age_Group As String)
+
+        Me.Label_Progress.Text = "Reading Fixtures for : " & Age_Group
+
+        Dim Fixture_Array_Cnt As Integer = 0
+        Dim Read_Value As String = ""
+        Dim Fixture_Date As String = ""
+        Dim Fixture_Date_dtm As Date
+        Dim Fixture_Detail As String = ""
+        Dim Fixture_HomeAway As String = ""
+        Dim Fixture_League As String = ""
+        Dim Fixture_Link As String = ""
+
+
+        Dim Age_Group_Test As String = Age_Group.Trim.ToUpper
+        Select Case Age_Group_Test
+            'Case "GIRLS" : Exit Sub
+            Case "MICROS", "MICRO" : Exit Sub
+            Case "U6S", "U6" : Exit Sub
+            Case "U7S", "U8S", "U9S", "U10S", "U11S", "U12S", "U7", "U8", "U9", "U10", "U11", "U12"
+                Age_Group_Test = "Minis"
+                'Exit Sub
+            Case Else
+                If VB.Left(Age_Group_Test, 5) = "GIRLS" Then
+                    Age_Group_Test = "Girls"
+                    Exit Sub
+                Else
+
+                    If VB.Right(Age_Group_Test, 1) = "S" Then
+                        Age_Group_Test = VB.Left(Age_Group_Test, Len(Age_Group_Test) - 1)
+                    End If
+                End If
+        End Select
+
+
+        Console.Write("**** " & Age_Group_Test & " ****")
+        Console.Write("**** " & Age_Group_Test & " ****")
+        Console.Write("**** " & Age_Group_Test & " ****")
+        'Extract all fixtures up to the last Sunday specified for the look ahead
+        Dim Next_Sundays_Date_dtm As Date = DateAdd("d", (7 - (Weekday(Now()))) + 1, Now())
+        Dim Last_Sundays_Date_dtm As Date = DateAdd("d", 56, Next_Sundays_Date_dtm)
+
+        Threading.Thread.Sleep(5000)
+
+        Dim reader As XmlTextReader = New XmlTextReader("http://www.grfc.co.uk/api/fixtures/" & Age_Group_Test & "?type=xml")
+        Do While (reader.Read())
+            Select Case reader.NodeType
+                Case XmlNodeType.Element 'Display beginning of element.
+                    'Console.Write("<" + reader.Name)
+                    If reader.HasAttributes Then 'If attributes exist
+                        While reader.MoveToNextAttribute()
+                            'Display attribute name and value.
+                            'Console.Write(" {0}='{1}'", reader.Name, reader.Value)
+                        End While
+                    End If
+                    'Console.WriteLine(">")
+
+                Case XmlNodeType.Text 'Display the text in each element.
+                    'Console.WriteLine(reader.Value)
+                    Read_Value = reader.Value.ToString
+
+                Case XmlNodeType.EndElement 'Display end of element.
+                    'Console.Write("</" + reader.Name)
+                    'Console.WriteLine(">")
+
+                    If reader.Name = "DiaryId" Then
+                        'Output previous fixture details
+                        ' Console.WriteLine("Date of Fixture : " & Fixture_Date & " Details : " & Fixture_Detail & " Location : " & Fixture_HomeAway & " League : " & Fixture_League & " URL : " & Fixture_Link)
+                        If Fixture_Detail <> "" Then
+                            'Make sure that it is a fixture as socials share the same diary.
+                            If Fixture_Date_dtm >= Now() And Fixture_Date_dtm <= Last_Sundays_Date_dtm And Fixture_Array_Cnt < 99 Then
+                                Console.WriteLine("Date of Fixture : " & Fixture_Date & " Details : " & Fixture_Detail & " Location : " & Fixture_HomeAway & " League : " & Fixture_League & " URL : " & Fixture_Link)
+
+                                Fixture_Array(Fixture_Array_Cnt) = Format(Fixture_Date_dtm, "dd MMM yy") & " " & Fixture_Detail & Fixture_HomeAway & Fixture_League
+                                Console.WriteLine(Fixture_Array(Fixture_Array_Cnt))
+                                Fixture_Array_Cnt = Fixture_Array_Cnt + 1
+                            End If
+                        End If
+                        'Initialise variables for new set of data
+                        Fixture_Date = ""
+                        Fixture_Detail = ""
+                        Fixture_HomeAway = ""
+                        Fixture_League = ""
+                        Fixture_Link = ""
+                    End If
+
+                    If reader.Name = "FixtureDate" Then
+                        Fixture_Date = VB.Left(Read_Value, 10)
+                        Fixture_Date_dtm = Read_Value
+                        'Console.WriteLine("xxDate of Fixture : " & VB.Left(Read_Value, 10))
+                    End If
+                    If reader.Name = "FixtureDetail" Then
+                        Fixture_Detail = Read_Value
+                        'Console.WriteLine("xxDetail of Fixture : " & Read_Value)
+                    End If
+                    If reader.Name = "FixtureHA" Then
+                        Fixture_HomeAway = Read_Value
+                        'Console.WriteLine("xxHome or Away : " & Fixture_HomeAway)
+                        Select Case Fixture_HomeAway
+                            Case "A" : Fixture_HomeAway = " (Away)"
+                            Case "H" : Fixture_HomeAway = " (Home)"
+                            Case Else : Fixture_HomeAway = " "
+                        End Select
+                    End If
+                    If reader.Name = "FixtureLeague" Then
+                        Fixture_League = Read_Value
+                        Select Case Fixture_League
+                            Case "true" : Fixture_League = " - League Match"
+                            Case Else : Fixture_League = ""
+                        End Select
+                        'Console.WriteLine("xxLeague : " & Read_Value, 10)
+                    End If
+                    If reader.Name = "FixtureLink" Then
+                        Fixture_Link = Read_Value
+                   
+                        'Console.WriteLine("xxLink : " & Read_Value)
+                    End If
+
+                    'Console.WriteLine("Date of Fixture : " & Fixture_Date & " Details : " & Fixture_Detail & " Location : " & Fixture_HomeAway & " League : " & Fixture_League & " URL : " & Fixture_Link)
+            End Select
+        Loop
+        Console.ReadLine()
+        If Fixture_Detail <> "" Then
+            'Make sure that it is a fixture as socials share the same diary.
+            If Fixture_Date_dtm >= Now() And Fixture_Date_dtm <= Last_Sundays_Date_dtm And Fixture_Array_Cnt < 99 Then
+                Console.WriteLine("Date of Fixture : " & Fixture_Date & " Details : " & Fixture_Detail & " Location : " & Fixture_HomeAway & " League : " & Fixture_League & " URL : " & Fixture_Link)
+
+                Fixture_Array(Fixture_Array_Cnt) = Format(Fixture_Date_dtm, "dd MMM yy") & " " & Fixture_Detail & Fixture_HomeAway & Fixture_League
+                Console.WriteLine(Fixture_Array(Fixture_Array_Cnt))
+                Fixture_Array_Cnt = Fixture_Array_Cnt + 1
+            End If
+        End If
+
+        Me.Label_Progress.Text = "Finished Reading Fixtures for : " & Age_Group
+
+    End Sub
+
+    Sub Registers_Read_Duty_Rota(ByRef Return_DutyRota_Week1 As String, ByRef Return_DutyRota_Week2 As String, ByRef Return_DutyRota_Week3 As String)
+
+
+        Dim Fixture_Array_Cnt As Integer = 0
+        Dim Read_Value As String = ""
+        Dim Rota_Date As String = ""
+        Dim Rota_Date_dtm As Date
+        Dim Rota_Detail As String = ""
+
+        Return_DutyRota_Week1 = ""
+        Return_DutyRota_Week2 = ""
+        Return_DutyRota_Week3 = ""
+
+        'Extract all fixtures up to the last Sunday specified for the look ahead
+        Dim Week1_Sundays_Date_dtm As Date = DateAdd("d", (7 - (Weekday(Now()))) + 1, Now()).Date
+        Dim Week2_Sundays_Date_dtm As Date = DateAdd("d", 14, Week1_Sundays_Date_dtm).Date
+        Dim Week3_Sundays_Date_dtm As Date = DateAdd("d", 56, Week1_Sundays_Date_dtm).Date
+
+        Threading.Thread.Sleep(5000)
+
+        Dim reader As XmlTextReader = New XmlTextReader("http://www.grfc.co.uk/api/rota?type=xml")
+        Do While (reader.Read())
+            Select Case reader.NodeType
+                Case XmlNodeType.Element 'Display beginning of element.
+                    'Console.Write("<" + reader.Name)
+                    If reader.HasAttributes Then 'If attributes exist
+                        While reader.MoveToNextAttribute()
+                            'Display attribute name and value.
+                            'Console.Write(" {0}='{1}'", reader.Name, reader.Value)
+                        End While
+                    End If
+                    'Console.WriteLine(">")
+
+                Case XmlNodeType.Text 'Display the text in each element.
+                    'Console.WriteLine(reader.Value)
+                    Read_Value = reader.Value.ToString
+
+                Case XmlNodeType.EndElement 'Display end of element.
+                    'Console.Write("</" + reader.Name)
+                    'Console.WriteLine(">")
+
+                    If reader.Name = "RotaItem" Then
+                        'Output previous fixture details
+                        ' Console.WriteLine("Date of Fixture : " & Fixture_Date & " Details : " & Fixture_Detail & " Location : " & Fixture_HomeAway & " League : " & Fixture_League & " URL : " & Fixture_Link)
+
+                        If Rota_Date_dtm = Week1_Sundays_Date_dtm Then
+                            Console.WriteLine("Date of Rota : " & Format(Rota_Date_dtm, "dd MMM yy") & " Age Group(s) : " & Rota_Detail)
+                            Return_DutyRota_Week1 = "Duty Rota : " & Format(Rota_Date_dtm, "dd MMM yy") & " Age Group : " & Rota_Detail
+                        End If
+                        If Rota_Date_dtm = Week2_Sundays_Date_dtm Then
+                            Console.WriteLine("Date of Rota : " & Format(Rota_Date_dtm, "dd MMM yy") & " Age Group(s) : " & Rota_Detail)
+                            Return_DutyRota_Week1 = "Duty Rota : " & Format(Rota_Date_dtm, "dd MMM yy") & " Age Group : " & Rota_Detail
+                        End If
+                        If Rota_Date_dtm = Week3_Sundays_Date_dtm Then
+                            Console.WriteLine("Date of Rota : " & Format(Rota_Date_dtm, "dd MMM yy") & " Age Group(s) : " & Rota_Detail)
+                            Return_DutyRota_Week1 = "Duty Rota : " & Format(Rota_Date_dtm, "dd MMM yy") & " Age Group : " & Rota_Detail
+                        End If
+
+                        'Initialise variables for new set of data
+                        Rota_Detail = ""
+                    End If
+
+                    If reader.Name = "Date" Then
+                        Rota_Date = VB.Left(Read_Value, 10)
+                        Rota_Date_dtm = Read_Value
+                        'Console.WriteLine("xxDate of Rota : " & VB.Left(Read_Value, 10))
+                    End If
+                    If reader.Name = "Rota" Then
+                        Rota_Detail = Read_Value
+                        'Console.WriteLine("xxDetail of Rota : " & Read_Value)
+                    End If
+                    'Console.WriteLine("Date of Fixture : " & Fixture_Date & " Details : " & Fixture_Detail & " Location : " & Fixture_HomeAway & " League : " & Fixture_League & " URL : " & Fixture_Link)
+            End Select
+        Loop
+        Console.ReadLine()
+        'All items read
+
+        If Rota_Date_dtm = Week1_Sundays_Date_dtm Then
+            Console.WriteLine("Date of Rota : " & Format(Rota_Date_dtm, "dd MMM yy") & " Age Group(s) : " & Rota_Detail)
+            Return_DutyRota_Week1 = "Duty Rota : " & Format(Rota_Date_dtm, "dd MMM yy") & " Age Group : " & Rota_Detail
+        End If
+        If Rota_Date_dtm = Week2_Sundays_Date_dtm Then
+            Console.WriteLine("Date of Rota : " & Format(Rota_Date_dtm, "dd MMM yy") & " Age Group(s) : " & Rota_Detail)
+            Return_DutyRota_Week1 = "Duty Rota : " & Format(Rota_Date_dtm, "dd MMM yy") & " Age Group : " & Rota_Detail
+        End If
+        If Rota_Date_dtm = Week3_Sundays_Date_dtm Then
+            Console.WriteLine("Date of Rota : " & Format(Rota_Date_dtm, "dd MMM yy") & " Age Group(s) : " & Rota_Detail)
+            Return_DutyRota_Week1 = "Duty Rota : " & Format(Rota_Date_dtm, "dd MMM yy") & " Age Group : " & Rota_Detail
+        End If
+
+        Me.Label_Progress.Text = "Finished Reading Duty Rota."
+
+    End Sub
+
+    Private Sub Button_Qualifications_List_Click(sender As Object, e As EventArgs) Handles Button_Qualifications_List.Click
+        Dim SendEmail As Boolean = False
+        Call Create_Qualifications_List(SendEmail)
+    End Sub
+
+    Private Sub Button_Qualifications_List_Send_Click(sender As Object, e As EventArgs) Handles Button_Qualifications_List_Send.Click
+        Dim SendEmail As Boolean = True
+        Call Create_Qualifications_List(SendEmail)
+    End Sub
+
+    Private Sub Button_Testing_Click(sender As Object, e As EventArgs) Handles Button_Testing.Click
+        Call Create_Report("SELECT * from Q_Coaches_List", "Report of all Coaches", "Coaches", "simon.p.davies@btconnect.com", "Simon," & vbCrLf & "Please find attached a report of all coaches." & vbCrLf & vbCrLf & "Thanks Simon")
+
+    End Sub
+
+
+    Sub XXX_Registers_Read_Duty_Rota(ByRef DutyRota_Week1 As String, ByRef DutyRota_Week2 As String, ByRef DutyRota_Week3 As String)
+
+        Me.Label_Progress.Text = "Reading Duty Rota."
+
+        'This routine returns who is on duty for the next 3 weeks.
+        DutyRota_Week1 = ""
+        DutyRota_Week2 = ""
+        DutyRota_Week3 = ""
+
+        Dim lInt_FreeFile01 As Integer = 0
+        Dim lInt_FreeFile02 As Integer = 0
+        Dim X As Date
+        Dim S_Next_Sundays_Date As String = Format(DateAdd("d", (7 - (Weekday(Now()))) + 1, Now()), "dd-MMM-yyyy")
+        Dim D_Next_Sundays_Date As Date = DateAdd("d", (7 - (Weekday(Now()))) + 1, Now())
+
+        Dim Date1 As String = ""
+        Dim Date2 As String = ""
+        Dim Date3 As String = ""
+
+        Dim D_Date_Calculator As Date
+
+        On Error GoTo Err_Handler
+
+        '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+        'Read the Duty Rota for the next 3 Sundays.
+        '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+        Date1 = S_Next_Sundays_Date
+
+        D_Date_Calculator = (DateAdd("d", 7, D_Next_Sundays_Date))
+        Date2 = Format(D_Date_Calculator, "dd-MMM-yyyy")
+
+        D_Date_Calculator = CStr(DateAdd("d", 56, D_Next_Sundays_Date))
+        Date3 = Format(D_Date_Calculator, "dd-MMM-yyyy")
+
+
+        DutyRota_Week1 = "Duty Rota : " & Date1
+        DutyRota_Week2 = "Duty Rota : " & Date2
+        DutyRota_Week3 = "Duty Rota : " & Date3
+        Dim startLength As Integer = Len(DutyRota_Week1)
+
+
+        Date1 = "#" & Date1 & "#"
+        Date2 = "#" & Date2 & "#"
+        Date3 = "#" & Date3 & "#"
+
+        Dim rotaXml As String = InvokeWSForRotaXml()
+        ' Console.WriteLine(InvokeWSForRotaXml.ToString)
+        Dim domDoc As XmlDocument = New XmlDocument
+        domDoc.LoadXml(rotaXml)
+
+
+        Dim rotaItem As XmlElement
+        Dim dateItem As XmlNodeList
+
+        For Each rotaItem In domDoc.DocumentElement.GetElementsByTagName("RotaItem")
+            Dim itemDate As String = ""
+            Dim ageGroup As String = ""
+            If rotaItem.GetElementsByTagName("Rota").ToString.Length > 0 Then
+                If rotaItem.GetElementsByTagName("Rota").Item(0).ToString <> "" Then
+                    ageGroup = VB.Left(rotaItem.GetElementsByTagName("Rota").Item(0).ToString, 10)
+                    itemDate = VB.Left(rotaItem.GetElementsByTagName("Date").Item(0).ToString, 10)
+                    itemDate = Format(CDate(itemDate), "dd-MMM-yyyy")
+                    If itemDate = Mid(Date1, 2, 11) And Len(DutyRota_Week1) = startLength Then
+                        DutyRota_Week1 = DutyRota_Week1 & " Age Group : " & ageGroup
+                    End If
+                    If itemDate = Mid(Date2, 2, 11) And Len(DutyRota_Week2) = startLength Then
+                        DutyRota_Week2 = DutyRota_Week2 & " Age Group : " & ageGroup
+                    End If
+                    If itemDate = Mid(Date3, 2, 11) And Len(DutyRota_Week3) = startLength Then
+                        DutyRota_Week3 = DutyRota_Week3 & " Age Group : " & ageGroup
+                    End If
+                End If
+            End If
+        Next
+        Exit Sub
+
+
+Err_Handler:
+        MsgBox("Error : " & Err.Number & vbCrLf & "Description : " & Err.Description, vbCritical)
+        'Resume bye
+        'bye:
+        End
+    End Sub
+End Class
+Enter file contents here
